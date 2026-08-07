@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand — identical in light and dark, carried over from the storefront */
+  --mango-orange: #ff6b00;
+  --mango-deep: #e55a00;
+  --orchard-green: #2d5a27;
+  --orchard-light: #3a7a33;
+  --golden: #ffd700;
+
+  --radius: 20px;
+  --radius-sm: 12px;
+
+  /* Surfaces — light */
+  --surface: #ffffff;
+  --surface-sunken: #fffbf0;
+  --text: #1a1a1a;
+  --text-light: #666666;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --error: #c0392b;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --surface: #241e17;
+  --surface-sunken: #17130f;
+  --text: #f2ede4;
+  --text-light: #a99f8f;
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --error: #ff6b5e;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface: #241e17;
+    --surface-sunken: #17130f;
+    --text: #f2ede4;
+    --text-light: #a99f8f;
+    --border-subtle: rgba(255, 255, 255, 0.1);
+    --error: #ff6b5e;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-mango-orange: var(--mango-orange);
+  --color-mango-deep: var(--mango-deep);
+  --color-orchard-green: var(--orchard-green);
+  --color-orchard-light: var(--orchard-light);
+  --color-golden: var(--golden);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-cormorant);
+}
+
+body {
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-sans), sans-serif;
+}

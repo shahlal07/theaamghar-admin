@@ -1,0 +1,57 @@
+import type { Metadata } from 'next';
+import { Inter, Cormorant_Garamond } from 'next/font/google';
+import { Toaster } from 'sonner';
+import './globals.css';
+
+const inter = Inter({
+  variable: '--font-inter',
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: '--font-cormorant',
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+});
+
+export const metadata: Metadata = {
+  title: 'TheAamGhar Admin',
+  description: 'Business management dashboard for TheAamGhar.',
+};
+
+// Applies a saved theme preference before first paint, matching the
+// storefront's convention (see js/cart.js) of avoiding a flash of the
+// wrong theme. Must run before any CSS renders.
+const THEME_INIT_SCRIPT = `
+(function () {
+  try {
+    var saved = localStorage.getItem('theaamghar_admin_theme');
+    if (saved === 'light' || saved === 'dark') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  } catch (e) {}
+})();
+`;
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html
+      lang="en"
+      className={`${inter.variable} ${cormorant.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="flex min-h-full flex-col">
+        {children}
+        <Toaster richColors position="top-right" />
+      </body>
+    </html>
+  );
+}

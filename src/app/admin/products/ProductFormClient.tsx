@@ -1,0 +1,878 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useActionState } from 'react';
+import { toast } from 'sonner';
+import Image from 'next/image';
+import type { ProductDetail, ProductBoxSizeInput, ProductVariantInput, Category } from '@/lib/queries/products';
+import {
+  PRODUCT_TYPES,
+  PRODUCT_TYPE_ATTRIBUTE_FIELDS,
+  PRODUCT_TYPE_VARIANT_DIMENSIONS,
+  type ProductType,
+} from '@/lib/product-types';
+import { createProduct, updateProduct, uploadProductImages, deleteProductImage } from './actions';
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-[var(--text-light)] uppercase tracking-wide">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const inputClass =
+  'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-sunken)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--mango-orange)] focus:ring-2 focus:ring-[var(--mango-orange)]/20';
+
+let boxSizeCounter = 0;
+function nextKey() {
+  boxSizeCounter += 1;
+  return `new-${boxSizeCounter}`;
+}
+
+type BoxSizeRow = ProductBoxSizeInput & { key: string };
+type VariantRow = ProductVariantInput & { key: string };
+
+export function ProductFormClient({
+  product,
+  categories,
+}: {
+  product: ProductDetail | null;
+  categories: Category[];
+}) {
+  const isEdit = product !== null;
+
+  const [name, setName] = useState(product?.name ?? '');
+  const [slug, setSlug] = useState(product?.slug ?? '');
+  const [slugTouched, setSlugTouched] = useState(isEdit);
+  const [categoryId, setCategoryId] = useState(product?.category_id ?? categories[0]?.id ?? '');
+  const [productType, setProductType] = useState<ProductType>(
+    (product?.product_type as ProductType) ?? 'fruit'
+  );
+  const [unitCost, setUnitCost] = useState(product?.unit_cost ?? 0);
+  const [clothingAttrs, setClothingAttrs] = useState<Record<string, string>>(() => {
+    const attrs = (product?.attributes ?? {}) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const f of PRODUCT_TYPE_ATTRIBUTE_FIELDS.clothing) {
+      out[f.key] = typeof attrs[f.key] === 'string' ? (attrs[f.key] as string) : '';
+    }
+    return out;
+  });
+  const [otherAttributesJson, setOtherAttributesJson] = useState(
+    JSON.stringify(product?.attributes ?? {}, null, 2)
+  );
+  // Retyping a product that already has box sizes/variants or real order
+  // history is blocked server-side too (actions.ts's updateProduct) -- this
+  // is the UI-level mirror of that guard so the mistake gets caught before
+  // a wasted round trip, not the only enforcement of it.
+  const canChangeType =
+    !isEdit ||
+    ((product?.box_sizes.length ?? 0) === 0 &&
+      (product?.variants.length ?? 0) === 0 &&
+      !product?.has_order_history);
+  const [tagline, setTagline] = useState(product?.tagline ?? '');
+  const [origin, setOrigin] = useState(product?.origin ?? '');
+  const [season, setSeason] = useState(product?.season ?? '');
+  const [sweetness, setSweetness] = useState(product?.sweetness ?? '');
+  const [fiber, setFiber] = useState(product?.fiber ?? '');
+  const [weightNote, setWeightNote] = useState(product?.weight_note ?? '');
+  const [discountPrice, setDiscountPrice] = useState<number | ''>(product?.discount_price ?? '');
+  const [status, setStatus] = useState(product?.status ?? 'draft');
+  const [sortOrder, setSortOrder] = useState(product?.sort_order ?? 0);
+  const [descriptionText, setDescriptionText] = useState(
+    (product?.description ?? []).join('\n')
+  );
+
+  const [purchasePricePerKg, setPurchasePricePerKg] = useState(
+    product?.purchase_price_per_kg ?? 0
+  );
+  const [packagingBoxCost, setPackagingBoxCost] = useState(product?.packaging_box_cost ?? 0);
+  const [foamPaperCost, setFoamPaperCost] = useState(product?.foam_paper_cost ?? 0);
+  const [brandingStickerCost, setBrandingStickerCost] = useState(
+    product?.branding_sticker_cost ?? 0
+  );
+  const [labourCost, setLabourCost] = useState(product?.labour_cost ?? 0);
+  const [marketingCostPerOrder, setMarketingCostPerOrder] = useState(
+    product?.marketing_cost_per_order ?? 0
+  );
+  const [miscCost, setMiscCost] = useState(product?.misc_cost ?? 0);
+  const [isSeasonal, setIsSeasonal] = useState(product?.is_seasonal ?? true);
+  const [harvestStart, setHarvestStart] = useState(product?.harvest_season_start ?? '');
+  const [harvestEnd, setHarvestEnd] = useState(product?.harvest_season_end ?? '');
+
+  const [image, setImage] = useState<string | null>(product?.image ?? null);
+  const [gallery, setGallery] = useState<string[]>(product?.gallery ?? []);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [boxSizes, setBoxSizes] = useState<BoxSizeRow[]>(
+    (product?.box_sizes ?? []).map((b) => ({ ...b, key: b.id ?? nextKey() }))
+  );
+  const [variants, setVariants] = useState<VariantRow[]>(
+    (product?.variants ?? []).map((v) => ({ ...v, key: v.id ?? nextKey() }))
+  );
+
+  const action = isEdit ? updateProduct : createProduct;
+  const [state, formAction, pending] = useActionState(action, undefined);
+
+  useEffect(() => {
+    if (state?.success) toast.success('Product saved');
+    if (state?.error) toast.error(state.error);
+  }, [state]);
+
+  const allImages = useMemo(
+    () => (image ? [image, ...gallery.filter((g) => g !== image)] : gallery),
+    [image, gallery]
+  );
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    const fd = new FormData();
+    for (const f of Array.from(files)) fd.append('files', f);
+    fd.set('folder', slug || 'misc');
+
+    const result = await uploadProductImages(undefined, fd);
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    const urls = result?.urls;
+    if (urls) {
+      setGallery((g) => [...g, ...urls]);
+      if (!image) setImage(urls[0]);
+      toast.success(`${urls.length} image(s) uploaded`);
+    }
+  }
+
+  async function handleRemoveImage(url: string) {
+    const fd = new FormData();
+    fd.set('url', url);
+    const result = await deleteProductImage(undefined, fd);
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    if (image === url) {
+      const rest = gallery.filter((g) => g !== url);
+      setImage(rest[0] ?? null);
+      setGallery(rest.slice(1));
+    } else {
+      setGallery((g) => g.filter((x) => x !== url));
+    }
+  }
+
+  function setPrimaryImage(url: string) {
+    if (url === image) return;
+    setGallery((g) => [...(image ? [image] : []), ...g.filter((x) => x !== url)]);
+    setImage(url);
+  }
+
+  function addBoxSize() {
+    setBoxSizes((rows) => [
+      ...rows,
+      {
+        key: nextKey(),
+        id: null,
+        box_size_kg: 5,
+        selling_price: 0,
+        stock_qty: 0,
+        low_stock_threshold: 5,
+        active: true,
+      },
+    ]);
+  }
+
+  function updateBoxSizeField<K extends keyof ProductBoxSizeInput>(
+    key: string,
+    field: K,
+    value: ProductBoxSizeInput[K]
+  ) {
+    setBoxSizes((rows) => rows.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+  }
+
+  function removeBoxSize(key: string) {
+    setBoxSizes((rows) => rows.filter((r) => r.key !== key));
+  }
+
+  function addVariant() {
+    const dims = PRODUCT_TYPE_VARIANT_DIMENSIONS[productType as 'clothing' | 'other'] ?? [];
+    setVariants((rows) => [
+      ...rows,
+      {
+        key: nextKey(),
+        id: null,
+        attributes: Object.fromEntries(dims.map((d) => [d.key, ''])),
+        label: null,
+        selling_price: 0,
+        stock_qty: 0,
+        low_stock_threshold: 5,
+        active: true,
+      },
+    ]);
+  }
+
+  function updateVariantAttribute(key: string, attrKey: string, value: string) {
+    setVariants((rows) =>
+      rows.map((r) => (r.key === key ? { ...r, attributes: { ...r.attributes, [attrKey]: value } } : r))
+    );
+  }
+
+  function updateVariantField<K extends keyof ProductVariantInput>(
+    key: string,
+    field: K,
+    value: ProductVariantInput[K]
+  ) {
+    setVariants((rows) => rows.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+  }
+
+  function removeVariant(key: string) {
+    setVariants((rows) => rows.filter((r) => r.key !== key));
+  }
+
+  // Switching type clears the other type's rows -- otherwise, on a new
+  // (not-yet-saved) product, stale box-size/variant rows built while a
+  // different type was selected would still be in state and get silently
+  // submitted alongside the newly-selected type.
+  function handleProductTypeChange(next: ProductType) {
+    setProductType(next);
+    if (next === 'fruit') {
+      setVariants([]);
+    } else {
+      setBoxSizes([]);
+    }
+  }
+
+  return (
+    <form
+      action={(fd) => {
+        if (isEdit) fd.set('productId', product.id);
+        fd.set('name', name);
+        fd.set('slug', slug);
+        fd.set('categoryId', categoryId);
+        fd.set('productType', productType);
+        fd.set('unitCost', String(unitCost));
+        fd.set(
+          'attributesJson',
+          productType === 'clothing'
+            ? JSON.stringify(clothingAttrs)
+            : productType === 'other'
+              ? otherAttributesJson
+              : '{}'
+        );
+        fd.set('origin', origin);
+        fd.set('season', season);
+        fd.set('sweetness', sweetness);
+        fd.set('fiber', fiber);
+        fd.set('tagline', tagline);
+        fd.set(
+          'descriptionJson',
+          JSON.stringify(
+            descriptionText
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean)
+          )
+        );
+        fd.set('discountPrice', discountPrice === '' ? '' : String(discountPrice));
+        fd.set('weightNote', weightNote);
+        fd.set('image', image ?? '');
+        fd.set('galleryJson', JSON.stringify(gallery.filter((g) => g !== image)));
+        fd.set('status', status);
+        fd.set('sortOrder', String(sortOrder));
+        fd.set('purchasePricePerKg', String(purchasePricePerKg));
+        fd.set('packagingBoxCost', String(packagingBoxCost));
+        fd.set('foamPaperCost', String(foamPaperCost));
+        fd.set('brandingStickerCost', String(brandingStickerCost));
+        fd.set('labourCost', String(labourCost));
+        fd.set('marketingCostPerOrder', String(marketingCostPerOrder));
+        fd.set('miscCost', String(miscCost));
+        fd.set('isSeasonal', String(isSeasonal));
+        fd.set('harvestSeasonStart', harvestStart);
+        fd.set('harvestSeasonEnd', harvestEnd);
+        fd.set(
+          'boxSizesJson',
+          JSON.stringify(
+            boxSizes.map((b) => ({
+              id: b.id,
+              box_size_kg: b.box_size_kg,
+              selling_price: b.selling_price,
+              stock_qty: b.stock_qty,
+              low_stock_threshold: b.low_stock_threshold,
+              active: b.active,
+            }))
+          )
+        );
+        fd.set(
+          'variantsJson',
+          JSON.stringify(
+            variants.map((v) => ({
+              id: v.id,
+              attributes: v.attributes,
+              label: v.label,
+              selling_price: v.selling_price,
+              stock_qty: v.stock_qty,
+              low_stock_threshold: v.low_stock_threshold,
+              active: v.active,
+            }))
+          )
+        );
+        formAction(fd);
+      }}
+      className="space-y-6"
+    >
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Basic Info</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Name">
+            <input
+              className={inputClass}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (!slugTouched) setSlug(slugify(e.target.value));
+              }}
+              required
+            />
+          </Field>
+          <Field label="Slug">
+            <input
+              className={inputClass}
+              value={slug}
+              onChange={(e) => {
+                setSlugTouched(true);
+                setSlug(e.target.value);
+              }}
+              required
+            />
+          </Field>
+          <Field label="Category">
+            <select
+              className={inputClass}
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select
+              className={inputClass}
+              value={status}
+              onChange={(e) => setStatus(e.target.value as typeof status)}
+            >
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+              <option value="archived">Archived</option>
+            </select>
+          </Field>
+          <Field label="Product Type">
+            <select
+              className={inputClass}
+              value={productType}
+              disabled={!canChangeType}
+              onChange={(e) => handleProductTypeChange(e.target.value as ProductType)}
+            >
+              {PRODUCT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            {!canChangeType && (
+              <p className="mt-1 text-xs text-[var(--text-light)]">
+                Locked — this product already has box sizes/variants or has been ordered.
+              </p>
+            )}
+          </Field>
+          <Field label="Tagline">
+            <input className={inputClass} value={tagline} onChange={(e) => setTagline(e.target.value)} />
+          </Field>
+          {productType === 'fruit' && (
+            <>
+              <Field label="Origin">
+                <input className={inputClass} value={origin} onChange={(e) => setOrigin(e.target.value)} />
+              </Field>
+              <Field label="Season">
+                <input className={inputClass} value={season} onChange={(e) => setSeason(e.target.value)} />
+              </Field>
+              <Field label="Sweetness">
+                <input
+                  className={inputClass}
+                  value={sweetness}
+                  onChange={(e) => setSweetness(e.target.value)}
+                />
+              </Field>
+              <Field label="Fiber">
+                <input className={inputClass} value={fiber} onChange={(e) => setFiber(e.target.value)} />
+              </Field>
+            </>
+          )}
+          {productType === 'clothing' &&
+            PRODUCT_TYPE_ATTRIBUTE_FIELDS.clothing.map((f) => (
+              <Field key={f.key} label={f.label}>
+                <input
+                  className={inputClass}
+                  value={clothingAttrs[f.key] ?? ''}
+                  onChange={(e) =>
+                    setClothingAttrs((a) => ({ ...a, [f.key]: e.target.value }))
+                  }
+                />
+              </Field>
+            ))}
+          {productType === 'other' && (
+            <div className="sm:col-span-2">
+              <Field label="Attributes (raw JSON)">
+                <textarea
+                  className={`${inputClass} font-mono text-xs`}
+                  rows={4}
+                  spellCheck={false}
+                  value={otherAttributesJson}
+                  onChange={(e) => setOtherAttributesJson(e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
+          <Field label="Weight note">
+            <input
+              className={inputClass}
+              value={weightNote}
+              onChange={(e) => setWeightNote(e.target.value)}
+            />
+          </Field>
+          <Field label="Sort order">
+            <input
+              type="number"
+              className={inputClass}
+              value={sortOrder}
+              onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)}
+            />
+          </Field>
+          <Field label="Discount price (Rs, optional)">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={discountPrice}
+              onChange={(e) =>
+                setDiscountPrice(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)
+              }
+            />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field label="Description (one bullet per line)">
+            <textarea
+              className={inputClass}
+              rows={4}
+              value={descriptionText}
+              onChange={(e) => setDescriptionText(e.target.value)}
+            />
+          </Field>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Images</h2>
+        <div className="mb-4 flex flex-wrap gap-3">
+          {allImages.map((url) => (
+            <div
+              key={url}
+              className="group relative h-24 w-24 overflow-hidden rounded-lg border border-[var(--border-subtle)]"
+            >
+              <Image src={url} alt="" fill sizes="96px" className="object-cover" unoptimized />
+              {url === image && (
+                <span className="absolute left-1 top-1 rounded bg-[var(--mango-orange)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  Primary
+                </span>
+              )}
+              <div className="absolute inset-0 flex items-end justify-center gap-1 bg-black/0 p-1 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+                {url !== image && (
+                  <button
+                    type="button"
+                    onClick={() => setPrimaryImage(url)}
+                    className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-[var(--text)]"
+                  >
+                    Make primary
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveImage(url)}
+                  className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-[var(--error)]"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          onChange={handleFileChange}
+          disabled={uploading}
+          className="text-sm text-[var(--text)]"
+        />
+        {uploading && <p className="mt-2 text-xs text-[var(--text-light)]">Uploading…</p>}
+      </div>
+
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Cost Inputs</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {productType === 'fruit' ? (
+            <Field label="Purchase price / kg">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                className={inputClass}
+                value={purchasePricePerKg}
+                onChange={(e) => setPurchasePricePerKg(parseFloat(e.target.value) || 0)}
+              />
+            </Field>
+          ) : (
+            <Field label="Cost per unit">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                className={inputClass}
+                value={unitCost}
+                onChange={(e) => setUnitCost(parseFloat(e.target.value) || 0)}
+              />
+            </Field>
+          )}
+          <Field label="Packaging box cost">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={packagingBoxCost}
+              onChange={(e) => setPackagingBoxCost(parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Foam/paper cost">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={foamPaperCost}
+              onChange={(e) => setFoamPaperCost(parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Branding/sticker cost">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={brandingStickerCost}
+              onChange={(e) => setBrandingStickerCost(parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Labour cost">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={labourCost}
+              onChange={(e) => setLabourCost(parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Marketing cost / order">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={marketingCostPerOrder}
+              onChange={(e) => setMarketingCostPerOrder(parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Misc. cost">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={inputClass}
+              value={miscCost}
+              onChange={(e) => setMiscCost(parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+        </div>
+      </div>
+
+      {productType === 'fruit' && (
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Season</h2>
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex items-center gap-2 pb-1.5 text-sm text-[var(--text)]">
+            <input
+              type="checkbox"
+              checked={isSeasonal}
+              onChange={(e) => setIsSeasonal(e.target.checked)}
+              className="h-4 w-4 accent-[var(--mango-orange)]"
+            />
+            Seasonal product
+          </label>
+          {isSeasonal && (
+            <>
+              <Field label="Harvest start">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={harvestStart}
+                  onChange={(e) => setHarvestStart(e.target.value)}
+                />
+              </Field>
+              <Field label="Harvest end">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={harvestEnd}
+                  onChange={(e) => setHarvestEnd(e.target.value)}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      </div>
+      )}
+
+      {productType === 'fruit' ? (
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-[var(--text)]">Box Sizes</h2>
+          <button
+            type="button"
+            onClick={addBoxSize}
+            className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)]"
+          >
+            + Add Box Size
+          </button>
+        </div>
+        {boxSizes.length === 0 ? (
+          <p className="text-sm text-[var(--text-light)]">
+            No box sizes yet — add at least one so this product can be sold.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {boxSizes.map((b) => (
+              <div
+                key={b.key}
+                className="grid grid-cols-2 gap-3 border-b border-[var(--border-subtle)] pb-3 last:border-b-0 sm:grid-cols-6 sm:items-end"
+              >
+                <Field label="Size (kg)">
+                  <input
+                    type="number"
+                    min={0.1}
+                    step="0.1"
+                    className={inputClass}
+                    value={b.box_size_kg}
+                    onChange={(e) =>
+                      updateBoxSizeField(b.key, 'box_size_kg', parseFloat(e.target.value) || 0)
+                    }
+                  />
+                </Field>
+                <Field label="Selling price">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className={inputClass}
+                    value={b.selling_price}
+                    onChange={(e) =>
+                      updateBoxSizeField(b.key, 'selling_price', parseFloat(e.target.value) || 0)
+                    }
+                  />
+                </Field>
+                <Field label="Stock qty">
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className={inputClass}
+                    value={b.stock_qty}
+                    onChange={(e) =>
+                      updateBoxSizeField(b.key, 'stock_qty', parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+                <Field label="Low-stock threshold">
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className={inputClass}
+                    value={b.low_stock_threshold}
+                    onChange={(e) =>
+                      updateBoxSizeField(
+                        b.key,
+                        'low_stock_threshold',
+                        parseInt(e.target.value, 10) || 0
+                      )
+                    }
+                  />
+                </Field>
+                <label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]">
+                  <input
+                    type="checkbox"
+                    checked={b.active}
+                    onChange={(e) => updateBoxSizeField(b.key, 'active', e.target.checked)}
+                    className="h-4 w-4 accent-[var(--mango-orange)]"
+                  />
+                  Active
+                </label>
+                <button
+                  type="button"
+                  onClick={() => removeBoxSize(b.key)}
+                  className="h-fit rounded-lg border border-[var(--error)] px-3 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      ) : (
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-[var(--text)]">Variants</h2>
+          <button
+            type="button"
+            onClick={addVariant}
+            className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)]"
+          >
+            + Add Variant
+          </button>
+        </div>
+        {variants.length === 0 ? (
+          <p className="text-sm text-[var(--text-light)]">
+            No variants yet — add at least one so this product can be sold.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {variants.map((v) => (
+              <div
+                key={v.key}
+                className="grid grid-cols-2 gap-3 border-b border-[var(--border-subtle)] pb-3 last:border-b-0 sm:items-end"
+                style={{
+                  gridTemplateColumns: `repeat(${PRODUCT_TYPE_VARIANT_DIMENSIONS[productType as 'clothing' | 'other'].length + 4}, minmax(0, 1fr))`,
+                }}
+              >
+                {PRODUCT_TYPE_VARIANT_DIMENSIONS[productType as 'clothing' | 'other'].map((dim) => (
+                  <Field key={dim.key} label={dim.label}>
+                    <input
+                      className={inputClass}
+                      value={v.attributes[dim.key] ?? ''}
+                      onChange={(e) => updateVariantAttribute(v.key, dim.key, e.target.value)}
+                    />
+                  </Field>
+                ))}
+                <Field label="Selling price">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className={inputClass}
+                    value={v.selling_price}
+                    onChange={(e) =>
+                      updateVariantField(v.key, 'selling_price', parseFloat(e.target.value) || 0)
+                    }
+                  />
+                </Field>
+                <Field label="Stock qty">
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className={inputClass}
+                    value={v.stock_qty}
+                    onChange={(e) =>
+                      updateVariantField(v.key, 'stock_qty', parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+                <Field label="Low-stock threshold">
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className={inputClass}
+                    value={v.low_stock_threshold}
+                    onChange={(e) =>
+                      updateVariantField(
+                        v.key,
+                        'low_stock_threshold',
+                        parseInt(e.target.value, 10) || 0
+                      )
+                    }
+                  />
+                </Field>
+                <label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]">
+                  <input
+                    type="checkbox"
+                    checked={v.active}
+                    onChange={(e) => updateVariantField(v.key, 'active', e.target.checked)}
+                    className="h-4 w-4 accent-[var(--mango-orange)]"
+                  />
+                  Active
+                </label>
+                <button
+                  type="button"
+                  onClick={() => removeVariant(v.key)}
+                  className="h-fit rounded-lg border border-[var(--error)] px-3 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={pending || uploading}
+        className="w-full rounded-lg bg-[var(--mango-orange)] py-3 text-sm font-semibold text-white transition hover:bg-[var(--mango-deep)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-8"
+      >
+        {pending ? 'Saving…' : isEdit ? 'Save Product' : 'Create Product'}
+      </button>
+    </form>
+  );
+}
