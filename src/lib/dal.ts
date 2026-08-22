@@ -25,11 +25,11 @@ export const getAdminUser = cache(async (): Promise<AdminUser> => {
     redirect('/login?error=not_admin');
   }
 
+  // The canonical vendors schema uses `status`; there is no `active` column.
   const { data: vendor, error: vendorError } = await supabase
     .from('vendors')
-    .select('id, name, active, status')
+    .select('id, name, status')
     .eq('id', profile.vendor_id)
-    .eq('active', true)
     .eq('status', 'active')
     .single();
 
