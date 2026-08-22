@@ -5,14 +5,13 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
  * Service-role Supabase client — bypasses RLS entirely and can call
  * `auth.admin.*` (change another user's email, trigger password resets,
  * etc). Only ever import this from Server Actions that have already called
- * getAdminUser(), and never expose SUPABASE_SERVICE_ROLE_KEY to the client
- * (no NEXT_PUBLIC_ prefix, never returned from an API response).
+ * getAdminUser(), and never expose either server-only key to the client.
  */
 export function createAdminClient() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
   if (!serviceRoleKey) {
     throw new Error(
-      'SUPABASE_SERVICE_ROLE_KEY is not set in .env.local — get it from Supabase Dashboard → Project Settings → API → service_role secret key.'
+      'Supabase server admin credentials are not configured. Set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.'
     );
   }
 
