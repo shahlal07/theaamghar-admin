@@ -36,7 +36,7 @@ type OrderRow = {
   profit: number;
   status: OrderStatus;
   payment_method: 'cod' | 'online' | null;
-  payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
+  payment_status: 'pending' | 'paid' | 'failed' | 'refunded' | null;
   items: OrderItem[] | null;
   delivery: { city?: string } | null;
   created_at: string;
@@ -71,19 +71,37 @@ function emptyStatusCounts(): Record<OrderStatus, number> {
   >;
 }
 
-/**
- * Fetches the last 365 days of orders and computes every dashboard stat
- * in application code rather than bespoke SQL aggregates. At the order
- * volumes a single-vendor mango business sees, this is simpler and far
- * easier to verify than hand-written jsonb/date_trunc SQL — revisit with
- * materialized views only if this ever becomes a measured bottleneck
- * (see Phase 15 — performance pass).
- */
+function emptyDashboardData(): DashboardData {
+  return {
+    totalRevenue: 0,
+    totalProfit: 0,
+    totalOrders: 0,
+    statusCounts: emptyStatusCounts(),
+    codPendingCount: 0,
+    codPendingAmount: 0,
+    codReceivedCount: 0,
+    codReceivedAmount: 0,
+    averageOrderValue: 0,
+    newCustomers: 0,
+    returningCustomers: 0,
+    dailySeries: [],
+    weeklySeries: [],
+    monthlySeries: [],
+    ordersByCity: [],
+    bestSellingVariety: [],
+    bestSellingProduct: [],
+  };
+}
+
 export async function getDashboardData(): Promise<DashboardData> {
   const supabase = await createClient();
   const since = subDays(new Date(), 365).toISOString();
 
-  const { data, error } = await supabase
+  // Prefer the full legacy order shape, but fall back to the shared
+  // platform's minimal order shape. This keeps /admin usable while older
+  // storefront schemas are still being migrated into the canonical DB.
+  let data: unknown[] | null = null;
+  const full = await supabase
     .from('orders')
     .select(
       'id, customer_id, total, profit, status, payment_method, payment_status, items, delivery, created_at'
@@ -91,18 +109,48 @@ export async function getDashboardData(): Promise<DashboardData> {
     .gte('created_at', since)
     .order('created_at', { ascending: true });
 
-  if (error) {
-    throw new Error(`Failed to load orders for dashboard: ${error.message}`);
+  if (!full.error) {
+    data = (full.data ?? []) as unknown[];
+  } else {
+    const minimal = await supabase
+      .from('orders')
+      .select('id, total, status, payment_method, payment_status, items, created_at')
+      .gte('created_at', since)
+      .order('created_at', { ascending: true });
+
+    if (!minimal.error) {
+      data = ((minimal.data ?? []) as Array<Record<string, unknown>>).map((o) => ({
+        id: String(o.id),
+        customer_id: null,
+        total: Number(o.total ?? 0),
+        profit: 0,
+        status: (o.status as OrderStatus) ?? 'pending',
+        payment_method: (o.payment_method as 'cod' | 'online' | null) ?? null,
+        payment_status: (o.payment_status as OrderRow['payment_status']) ?? null,
+        items: Array.isArray(o.items) ? (o.items as OrderItem[]) : null,
+        delivery: null,
+        created_at: String(o.created_at),
+      }));
+    } else {
+      // Do not turn a successful authentication into a login-loop just
+      // because the dashboard's optional analytics source is unavailable.
+      console.error('[dashboard] orders unavailable:', minimal.error.message);
+      return emptyDashboardData();
+    }
   }
 
   const orders = (data ?? []) as OrderRow[];
   const revenueOrders = orders.filter(isRevenueOrder);
 
   const totalRevenue = revenueOrders.reduce((s, o) => s + Number(o.total), 0);
-  const totalProfit = revenueOrders.reduce((s, o) => s + Number(o.profit), 0);
+  const totalProfit = revenueOrders.reduce((s, o) => s + Number(o.profit ?? 0), 0);
 
   const statusCounts = emptyStatusCounts();
-  for (const o of orders) statusCounts[o.status] = (statusCounts[o.status] ?? 0) + 1;
+  for (const o of orders) {
+    if (statusCounts[o.status] !== undefined) {
+      statusCounts[o.status] += 1;
+    }
+  }
 
   const codPending = orders.filter(
     (o) => o.payment_method === 'cod' && o.payment_status === 'pending'
@@ -137,12 +185,12 @@ export async function getDashboardData(): Promise<DashboardData> {
     map: Map<string, SeriesPoint>,
     key: string,
     label: string,
-    order: OrderRow
+    order: OrderRow,
   ) => {
     const point = map.get(key) ?? { label, revenue: 0, profit: 0, orders: 0 };
     if (isRevenueOrder(order)) {
       point.revenue += Number(order.total);
-      point.profit += Number(order.profit);
+      point.profit += Number(order.profit ?? 0);
     }
     point.orders += 1;
     map.set(key, point);
@@ -155,13 +203,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       weeklyMap,
       format(startOfWeek(created), 'yyyy-MM-dd'),
       `Wk of ${format(startOfWeek(created), 'MMM d')}`,
-      o
+      o,
     );
     bump(
       monthlyMap,
       format(startOfMonth(created), 'yyyy-MM'),
       format(created, 'MMM yyyy'),
-      o
+      o,
     );
 
     const city = o.delivery?.city?.trim();
