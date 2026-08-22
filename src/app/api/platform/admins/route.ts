@@ -29,13 +29,36 @@ async function listAuthUsers(admin: ReturnType<typeof createAdminClient>) {
   return data.users;
 }
 
-async function syncProfileRole(admin: ReturnType<typeof createAdminClient>, userId: string, vendorId: string, role: 'owner' | 'staff') {
-  const profileRole = role === 'owner' ? 'admin' : 'staff';
-  const { error } = await admin
-    .from('profiles')
-    .update({ role: profileRole, vendor_id: vendorId })
-    .eq('id', userId);
+async function listVendorAdmins(admin: ReturnType<typeof createAdminClient>, vendorId: string) {
+  const { data: rows, error } = await admin
+    .from('vendor_admins')
+    .select('id, vendor_id, name, email, role, added_at')
+    .eq('vendor_id', vendorId)
+    .order('added_at', { ascending: true });
   if (error) throw new Error(error.message);
+
+  const users = await listAuthUsers(admin);
+  const admins = [] as VendorAdminRow[];
+  for (const row of rows ?? []) {
+    const authUser = users.find((user) => user.email?.toLowerCase() === row.email.toLowerCase());
+    const normalizedRole = row.role === 'owner' ? 'owner' : 'staff';
+    if (authUser) {
+      const profileRole = normalizedRole === 'owner' ? 'admin' : 'staff';
+      const { error: profileError } = await admin
+        .from('profiles')
+        .update({ role: profileRole, vendor_id: vendorId })
+        .eq('id', authUser.id);
+      if (profileError) throw new Error(profileError.message);
+    }
+    admins.push({
+      id: authUser?.id ?? row.id,
+      name: row.name,
+      email: row.email,
+      role: normalizedRole,
+      added_at: row.added_at,
+    });
+  }
+  return admins;
 }
 
 export async function GET(request: Request) {
@@ -43,30 +66,8 @@ export async function GET(request: Request) {
     assertInternalRequest(request);
     const vendorId = new URL(request.url).searchParams.get('vendorId')?.trim();
     if (!vendorId) return NextResponse.json({ error: 'vendorId is required.' }, { status: 400 });
-
     const admin = createAdminClient();
-    const { data: rows, error } = await admin
-      .from('vendor_admins')
-      .select('id, vendor_id, name, email, role, added_at')
-      .eq('vendor_id', vendorId)
-      .order('added_at', { ascending: true });
-    if (error) throw new Error(error.message);
-
-    const users = await listAuthUsers(admin);
-    const admins = [] as VendorAdminRow[];
-    for (const row of rows ?? []) {
-      const authUser = users.find((user) => user.email?.toLowerCase() === row.email.toLowerCase());
-      if (authUser) await syncProfileRole(admin, authUser.id, vendorId, row.role === 'owner' ? 'owner' : 'staff');
-      admins.push({
-        id: authUser?.id ?? row.id,
-        name: row.name,
-        email: row.email,
-        role: row.role === 'owner' ? 'owner' : 'staff',
-        added_at: row.added_at,
-      });
-    }
-
-    return NextResponse.json({ admins });
+    return NextResponse.json({ admins: await listVendorAdmins(admin, vendorId) });
   } catch (error) {
     if (error instanceof Response) return error;
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not load vendor admins.' }, { status: 500 });
@@ -80,6 +81,11 @@ export async function POST(request: Request) {
     const action = String(body.action ?? '');
     const vendorId = String(body.vendorId ?? '').trim();
     const admin = createAdminClient();
+
+    if (action === 'list') {
+      if (!vendorId) return NextResponse.json({ error: 'vendorId is required.' }, { status: 400 });
+      return NextResponse.json({ admins: await listVendorAdmins(admin, vendorId) });
+    }
 
     if (action === 'create_store') {
       const businessName = String(body.businessName ?? '').trim();
@@ -111,7 +117,7 @@ export async function POST(request: Request) {
         if (createError || !created.user) throw new Error(createError?.message ?? 'Could not create the owner account.');
         const { error: contactError } = await admin.from('vendor_admins').upsert({ vendor_id: vendor.id, name: ownerName, email: ownerEmail, role: 'owner' }, { onConflict: 'vendor_id,email' });
         if (contactError) throw new Error(contactError.message);
-        await syncProfileRole(admin, created.user.id, vendor.id, 'owner');
+        await admin.from('profiles').update({ role: 'admin', vendor_id: vendor.id }).eq('id', created.user.id);
         const { error: activeError } = await admin.from('vendors').update({ status: 'active' }).eq('id', vendor.id);
         if (activeError) throw new Error(activeError.message);
         return NextResponse.json({ vendorId: vendor.id });
@@ -151,7 +157,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: rowError?.message ?? 'Could not save vendor admin.' }, { status: 500 });
       }
 
-      await syncProfileRole(admin, created.user.id, vendorId, role);
+      await admin.from('profiles').update({ role: role === 'owner' ? 'admin' : 'staff', vendor_id: vendorId }).eq('id', created.user.id);
       return NextResponse.json({ admin: { id: created.user.id, name: row.name, email: row.email, role, added_at: row.added_at } satisfies VendorAdminRow, temporaryPassword: password });
     }
 
@@ -180,7 +186,7 @@ export async function POST(request: Request) {
       const { data: updatedRow, error: updateRowError } = await admin.from('vendor_admins').update({ name, email }).eq('id', row.id).select('id, name, email, role, added_at').single();
       if (updateRowError || !updatedRow) return NextResponse.json({ error: updateRowError?.message ?? 'Could not update vendor admin.' }, { status: 500 });
 
-      await syncProfileRole(admin, userId, vendorId, updatedRow.role === 'owner' ? 'owner' : 'staff');
+      await admin.from('profiles').update({ role: updatedRow.role === 'owner' ? 'admin' : 'staff', vendor_id: vendorId }).eq('id', userId);
       return NextResponse.json({ admin: { id: updated.user.id, name: updatedRow.name, email: updatedRow.email, role: updatedRow.role === 'owner' ? 'owner' : 'staff', added_at: updatedRow.added_at } satisfies VendorAdminRow, passwordChanged: Boolean(password) });
     }
 
@@ -194,7 +200,7 @@ export async function POST(request: Request) {
       const password = `Ns-${crypto.randomUUID()}-Aa1!`;
       const { error: updateError } = await admin.auth.admin.updateUserById(userId, { password, user_metadata: { ...(current.user.user_metadata ?? {}), must_change_password: true, vendor_id: vendorId, role: assignment.role === 'owner' ? 'vendor_admin' : 'vendor_staff' } });
       if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
-      await syncProfileRole(admin, userId, vendorId, assignment.role === 'owner' ? 'owner' : 'staff');
+      await admin.from('profiles').update({ role: assignment.role === 'owner' ? 'admin' : 'staff', vendor_id: vendorId }).eq('id', userId);
       await admin.auth.admin.signOut(userId, 'global').catch(() => undefined);
       return NextResponse.json({ temporaryPassword: password, admin: { id: userId, name: assignment.name, email: assignment.email } });
     }
