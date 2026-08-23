@@ -8,7 +8,7 @@ export function createClient() {
     // Graceful degradation: log to console instead of crashing the client bundle
     if (typeof window !== "undefined") {
       console.error(
-        "[theaamghar-admin] Supabase credentials missing. Check Vercel env vars: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY"
+        "[vendor-admins] Supabase credentials missing. Check Vercel env vars: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY"
       );
     }
     // Return a dummy client that will fail gracefully on first use

@@ -9,7 +9,7 @@ type RateLimitOptions = {
 type RateLimitResult = { allowed: boolean; retryAfter: string | null };
 
 // Generic wrapper around the check_and_record_rate_limit RPC (mirrors
-// theaamghar-web/src/lib/rate-limit.ts) -- parameterized version of the same
+// vendor-storefronts/src/lib/rate-limit.ts) -- parameterized version of the same
 // row-lock/increment/lockout primitive check_and_record_login_attempt
 // already uses. Fails closed on any RPC error.
 export async function checkRateLimit(

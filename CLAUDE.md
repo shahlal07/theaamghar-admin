@@ -4,7 +4,7 @@ Guidance for Claude Code (or any agent) working in this repository.
 
 ## What this is
 
-`theaamghar-admin` is the **admin-only** business management panel for
+`vendor-admins` is the **admin-only** business management panel for
 TheAamGhar (Pakistani mango e-commerce). It is a real Next.js + TypeScript
 app backed by a real Supabase project — **not** a demo, not mock data.
 
@@ -139,8 +139,8 @@ placeholder with the real implementation; don't remove it from nav.
   PATH change made mid-session (new processes spawned by the harness's
   parent don't re-read the registry), so every Bash call that needs
   `node`/`npm` must prefix: `export PATH="/c/Program Files/nodejs:$PATH"`.
-- **`.claude/launch.json`**'s `theaamghar-admin` entry can't just run `npm`
-  directly for the same PATH reason — it points at `theaamghar-admin\dev.bat`,
+- **`.claude/launch.json`**'s `vendor-admins` entry can't just run `npm`
+  directly for the same PATH reason — it points at `vendor-admins\dev.bat`,
   a tiny wrapper that sets PATH then runs `npm run dev`. Don't "simplify"
   this back to a bare npm command; it'll silently fail to find `node`.
 - **GoTrue (Supabase Auth) 500 on sign-in after seeding a user via raw SQL**:
@@ -273,7 +273,7 @@ manual `manual_adjustment` audit-log entries — don't repeat it.
   - **Point-in-Time Recovery**: Supabase Dashboard → project → Database →
     Backups → enable PITR (paid add-on beyond the free tier).
   - **Vercel preview-deployment protection**: Vercel Dashboard →
-    `theaamghar-admin` project → Settings → Deployment Protection → enable
+    `vendor-admins` project → Settings → Deployment Protection → enable
     protection for Preview deployments.
 
 ## Phase 15 performance pass — findings and fixes

@@ -1,4 +1,4 @@
-// Mirrors theaamghar-web's variant-label.ts convention (same cross-repo
+// Mirrors vendor-storefronts's variant-label.ts convention (same cross-repo
 // duplication pattern already used for formatPKR/order-status.ts) -- an
 // order line built by the new (post-product-type) checkout carries a
 // precomputed `variant_label` ("M / Blue"); every order placed before that

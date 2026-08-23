@@ -71,7 +71,7 @@ export async function updateSiteContentSection(
   }
 
   // brandColors gets interpolated directly into a <style> tag on the
-  // storefront (see theaamghar-web's layout.tsx) -- reject anything that
+  // storefront (see vendor-storefronts's layout.tsx) -- reject anything that
   // isn't a plain 6-digit hex here rather than relying solely on that
   // render-time fallback, so a bad value never even reaches the DB.
   if (section === 'brandColors') {

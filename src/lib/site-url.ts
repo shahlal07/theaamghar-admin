@@ -4,5 +4,5 @@
 // so it reads NEXT_PUBLIC_SITE_URL -- switching to a real domain later is
 // one env var rather than a find-replace.
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://theaamghar-web.vercel.app'
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://vendor-storefronts.vercel.app'
 ).replace(/\/$/, '');
