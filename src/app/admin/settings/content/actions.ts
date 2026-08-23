@@ -10,9 +10,9 @@ export type ContentActionState = { error?: string; success?: boolean } | undefin
 
 const SECTION_KEYS = Object.keys(DEFAULT_SITE_CONTENT) as (keyof SiteContent)[];
 
-async function readRawContent(): Promise<Record<string, unknown>> {
+async function readRawContent(vendorId: string): Promise<Record<string, unknown>> {
   const supabase = await createClient();
-  const { data } = await supabase.from('site_content').select('content').eq('id', true).maybeSingle();
+  const { data } = await supabase.from('site_content').select('content').eq('vendor_id', vendorId).maybeSingle();
   return (data?.content as Record<string, unknown> | null) ?? {};
 }
 
@@ -21,23 +21,25 @@ async function readRawContent(): Promise<Record<string, unknown>> {
 // deep merge like mergeSiteContent's isn't needed for the write path; it's
 // only needed on read, over the defaults, in getSiteContent().
 //
-// Uses update(), not upsert() -- the row is a singleton seeded once by the
-// migration and is never deleted, and RLS only grants UPDATE on this table
-// (no INSERT policy, deliberately, since a client should never be able to
-// create a second row). upsert() compiles to INSERT ... ON CONFLICT DO
-// UPDATE, which Postgres's RLS still evaluates against the INSERT policy
-// even when the row already exists -- with no INSERT policy at all, that
-// silently 0-rows/rejects. Caught via a real end-to-end save test, not a
-// hunch: this is a real production business, and it needs to actually
-// persist edits, not error underneath a generic-looking "Failed to save".
-async function writeContentPatch(patch: Record<string, unknown>): Promise<{ error?: string }> {
+// One row per vendor_id (not a singleton -- an earlier version of this file
+// predated multi-tenancy and queried `.eq('id', true)` against a column that
+// doesn't exist on the live schema, silently no-op-ing every save for every
+// vendor except whichever one a raw SQL update happened to target directly).
+// Uses update(), not upsert() -- each vendor's row is seeded once by
+// provisioning and never deleted, and RLS only grants UPDATE on this table
+// (no INSERT policy for regular admins, deliberately, since a vendor admin
+// should never be able to create another vendor's row). upsert() compiles to
+// INSERT ... ON CONFLICT DO UPDATE, which Postgres's RLS still evaluates
+// against the INSERT policy even when the row already exists -- with no
+// INSERT policy granted to admins, that silently 0-rows/rejects.
+async function writeContentPatch(vendorId: string, patch: Record<string, unknown>): Promise<{ error?: string }> {
   const supabase = await createClient();
-  const current = await readRawContent();
+  const current = await readRawContent(vendorId);
   const next = { ...current, ...patch };
   const { error } = await supabase
     .from('site_content')
     .update({ content: next, updated_at: new Date().toISOString() })
-    .eq('id', true);
+    .eq('vendor_id', vendorId);
   return error ? { error: error.message } : {};
 }
 
@@ -84,7 +86,7 @@ export async function updateSiteContentSection(
     }
   }
 
-  const { error } = await writeContentPatch({ [section]: parsed });
+  const { error } = await writeContentPatch(admin.vendor_id, { [section]: parsed });
   if (error) return { error: `Failed to save: ${error}` };
 
   await logAdminAction(admin, 'update', 'site_content', section);
@@ -92,7 +94,7 @@ export async function updateSiteContentSection(
   return { success: true };
 }
 
-type ImageField = 'brandLogo' | 'brandFavicon' | 'heroMobile' | 'storyBannerMobile';
+type ImageField = 'brandLogo' | 'brandFavicon' | 'heroDesktop' | 'heroMobile' | 'storyBannerMobile';
 
 const IMAGE_FIELD_CONFIG: Record<
   ImageField,
@@ -100,6 +102,7 @@ const IMAGE_FIELD_CONFIG: Record<
 > = {
   brandLogo: { section: 'brand', key: 'logoImageUrl', basePath: 'brand-logo' },
   brandFavicon: { section: 'brand', key: 'faviconUrl', basePath: 'brand-favicon' },
+  heroDesktop: { section: 'hero', key: 'desktopImageUrl', basePath: 'hero-desktop' },
   heroMobile: { section: 'hero', key: 'mobileImageUrl', basePath: 'hero-mobile' },
   storyBannerMobile: { section: 'storyBanner', key: 'mobileImageUrl', basePath: 'story-banner-mobile' },
 };
@@ -123,12 +126,18 @@ export async function uploadSiteContentImage(
   if (file.size > MAX_BYTES) return { error: 'File is larger than 5MB.' };
 
   const supabase = await createClient();
-  const current = await readRawContent();
+  const current = await readRawContent(admin.vendor_id);
   const sectionData = (current[config.section] as Record<string, unknown> | undefined) ?? {};
   const previousUrl = sectionData[config.key] as string | null | undefined;
 
+  // Storage RLS requires the first path segment to be the uploader's own
+  // vendor_id (admins manage site content images policy) -- the unscoped
+  // path this used to write (e.g. plain "hero-mobile.jpg") both failed that
+  // check for every non-super-admin and, for the one caller (super admin)
+  // it didn't reject, would have every vendor's hero image overwrite every
+  // other vendor's at the same shared path.
   const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-  const path = `${config.basePath}.${ext}`;
+  const path = `${admin.vendor_id}/${config.basePath}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from('site-content-images')
@@ -155,7 +164,7 @@ export async function uploadSiteContentImage(
   // pick up the new file instead of serving a stale cached copy.
   const bustedUrl = `${publicUrl.publicUrl}?v=${Date.now()}`;
 
-  const { error } = await writeContentPatch({
+  const { error } = await writeContentPatch(admin.vendor_id, {
     [config.section]: { ...sectionData, [config.key]: bustedUrl },
   });
   if (error) return { error: `Failed to save: ${error}` };

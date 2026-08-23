@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminUser } from '@/lib/dal';
 
 export type VarietyBoxSize = {
   id: string;
@@ -30,6 +31,7 @@ export async function getVarieties(): Promise<{
   gatewayFeePercent: number;
   defaultShippingCost: number;
 }> {
+  const admin = await getAdminUser();
   const supabase = await createClient();
 
   const [{ data: varieties, error }, { data: settings }] = await Promise.all([
@@ -46,11 +48,12 @@ export async function getVarieties(): Promise<{
       // clothing/other product (null harvest dates, no purchase-price-per-kg)
       // would pollute this list the moment one exists.
       .eq('product_type', 'fruit')
+      .eq('vendor_id', admin.vendor_id)
       .order('sort_order'),
     supabase
       .from('business_settings')
       .select('payment_gateway_fee_percent, default_shipping_cost')
-      .eq('id', true)
+      .eq('vendor_id', admin.vendor_id)
       .single(),
   ]);
 

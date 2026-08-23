@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminUser } from '@/lib/dal';
 import { getShippingZones, type ProvinceShipping } from '@/lib/queries/shipping';
 
 export type ProductWithCosts = {
@@ -31,6 +32,7 @@ export async function getProfitCalculatorData(): Promise<{
   settings: BusinessSettings;
   shippingZones: ProvinceShipping[];
 }> {
+  const admin = await getAdminUser();
   const supabase = await createClient();
 
   const [
@@ -45,11 +47,12 @@ export async function getProfitCalculatorData(): Promise<{
          branding_sticker_cost, labour_cost, marketing_cost_per_order, misc_cost,
          box_sizes:product_box_sizes(id, box_size_kg, selling_price, active)`
       )
+      .eq('vendor_id', admin.vendor_id)
       .order('sort_order'),
     supabase
       .from('business_settings')
       .select('payment_gateway_fee_percent, default_shipping_cost, currency')
-      .eq('id', true)
+      .eq('vendor_id', admin.vendor_id)
       .single(),
     getShippingZones(),
   ]);

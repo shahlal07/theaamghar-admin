@@ -5,8 +5,8 @@ import { ContentEditorClient } from './ContentEditorClient';
 export const dynamic = 'force-dynamic';
 
 export default async function SiteContentPage() {
-  await requireAdmin();
-  const content = await getSiteContent();
+  const admin = await requireAdmin();
+  const content = await getSiteContent(admin.vendor_id);
 
   return (
     <div>
