@@ -25,6 +25,7 @@ const SettingsSchema = z.object({
   supportEmail: z.string().nullable(),
   supportWhatsapp: z.string().nullable(),
   businessAddress: z.string().nullable(),
+  googleMapsUrl: urlField,
   facebookUrl: urlField,
   instagramUrl: urlField,
   tiktokUrl: urlField,
@@ -38,7 +39,7 @@ export async function updateBusinessSettings(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const strOrNull = (v: FormDataEntryValue | null) =>
     v === null || String(v).trim() === '' ? null : String(v);
@@ -54,6 +55,7 @@ export async function updateBusinessSettings(
     supportEmail: strOrNull(formData.get('supportEmail')),
     supportWhatsapp: strOrNull(formData.get('supportWhatsapp')),
     businessAddress: strOrNull(formData.get('businessAddress')),
+    googleMapsUrl: strOrNull(formData.get('googleMapsUrl')),
     facebookUrl: strOrNull(formData.get('facebookUrl')),
     instagramUrl: strOrNull(formData.get('instagramUrl')),
     tiktokUrl: strOrNull(formData.get('tiktokUrl')),
@@ -80,6 +82,7 @@ export async function updateBusinessSettings(
       support_email: d.supportEmail,
       support_whatsapp: d.supportWhatsapp,
       business_address: d.businessAddress,
+      google_maps_url: d.googleMapsUrl,
       facebook_url: d.facebookUrl,
       instagram_url: d.instagramUrl,
       tiktok_url: d.tiktokUrl,
@@ -89,7 +92,7 @@ export async function updateBusinessSettings(
       welcome_discount_enabled: d.welcomeDiscountEnabled,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', true);
+    .eq('vendor_id', admin.vendor_id);
 
   if (error) return { error: `Failed to save settings: ${error.message}` };
 

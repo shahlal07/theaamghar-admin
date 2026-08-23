@@ -35,6 +35,7 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
   const [supportEmail, setSupportEmail] = useState(settings.support_email ?? '');
   const [supportWhatsapp, setSupportWhatsapp] = useState(settings.support_whatsapp ?? '');
   const [businessAddress, setBusinessAddress] = useState(settings.business_address ?? '');
+  const [googleMapsUrl, setGoogleMapsUrl] = useState(settings.google_maps_url ?? '');
   const [facebookUrl, setFacebookUrl] = useState(settings.facebook_url ?? '');
   const [instagramUrl, setInstagramUrl] = useState(settings.instagram_url ?? '');
   const [tiktokUrl, setTiktokUrl] = useState(settings.tiktok_url ?? '');
@@ -67,6 +68,7 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
         fd.set('supportEmail', supportEmail);
         fd.set('supportWhatsapp', supportWhatsapp);
         fd.set('businessAddress', businessAddress);
+        fd.set('googleMapsUrl', googleMapsUrl);
         fd.set('facebookUrl', facebookUrl);
         fd.set('instagramUrl', instagramUrl);
         fd.set('tiktokUrl', tiktokUrl);
@@ -102,6 +104,19 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
                 onChange={(e) => setBusinessAddress(e.target.value)}
                 className={inputClass}
               />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="Google Maps link">
+              <input
+                value={googleMapsUrl}
+                onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                placeholder="https://maps.app.goo.gl/..."
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-[var(--text-light)]">
+                Share your location from Google Maps and paste the link here. Shown with an embedded map on your storefront&apos;s &ldquo;Find Us&rdquo; section once both this and the address above are set.
+              </p>
             </Field>
           </div>
         </div>

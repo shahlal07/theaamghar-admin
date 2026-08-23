@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminUser } from '@/lib/dal';
 
 export type BusinessSettings = {
   payment_gateway_fee_percent: number;
@@ -12,6 +13,7 @@ export type BusinessSettings = {
   support_email: string | null;
   support_whatsapp: string | null;
   business_address: string | null;
+  google_maps_url: string | null;
   facebook_url: string | null;
   instagram_url: string | null;
   tiktok_url: string | null;
@@ -22,13 +24,14 @@ export type BusinessSettings = {
 };
 
 export async function getBusinessSettings(): Promise<BusinessSettings> {
+  const admin = await getAdminUser();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('business_settings')
     .select(
-      'payment_gateway_fee_percent, default_shipping_cost, currency, tax_percent, low_stock_alert_threshold, business_name, support_phone, support_email, support_whatsapp, business_address, facebook_url, instagram_url, tiktok_url, youtube_url, twitter_url, welcome_discount_percent, welcome_discount_enabled'
+      'payment_gateway_fee_percent, default_shipping_cost, currency, tax_percent, low_stock_alert_threshold, business_name, support_phone, support_email, support_whatsapp, business_address, google_maps_url, facebook_url, instagram_url, tiktok_url, youtube_url, twitter_url, welcome_discount_percent, welcome_discount_enabled'
     )
-    .eq('id', true)
+    .eq('vendor_id', admin.vendor_id)
     .single();
 
   if (error) throw new Error(`Failed to load business settings: ${error.message}`);
