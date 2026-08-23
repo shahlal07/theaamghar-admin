@@ -58,7 +58,7 @@ export async function generateAIReply(
       {
         role: 'system',
         content:
-          "You are writing a short public reply, as the business TheAamGhar (a Pakistani mango/fruit e-commerce brand), to a customer's product review. " +
+          `You are writing a short public reply, as the business ${admin.vendor_name}, to a customer's product review. ` +
           'Keep it warm, genuine, and brief (2-3 sentences max). Match tone to the star rating: enthusiastic thanks for 4-5 stars, ' +
           'understanding + inviting more detail for 3 stars, sincere apology + invite them to contact support on WhatsApp to resolve it for 1-2 stars. ' +
           'Address the customer by first name if given. Do not invent specific facts (order numbers, dates, refund amounts) you were not given. ' +

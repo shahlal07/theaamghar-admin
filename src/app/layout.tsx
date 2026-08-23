@@ -16,8 +16,8 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: 'TheAamGhar Admin',
-  description: 'Business management dashboard for TheAamGhar.',
+  title: 'Store Admin',
+  description: 'Business management dashboard.',
 };
 
 // Applies a saved theme preference before first paint, matching the

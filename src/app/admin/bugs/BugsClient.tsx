@@ -20,7 +20,7 @@ function StatusPill({ status }: { status: string }) {
       className: 'bg-[var(--surface-sunken)] text-[var(--text-light)]',
     },
     confirmed: {
-      label: 'Confirmed — 🥭 +1',
+      label: 'Confirmed — +1',
       className: 'bg-green-500/15 text-green-600 dark:text-green-400',
     },
     rejected: { label: 'Rejected', className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
@@ -72,7 +72,7 @@ function BugRow({ report }: { report: BugReport }) {
   const [rejectState, rejectAction, rejectPending] = useActionState(rejectBugReport, undefined);
 
   useEffect(() => {
-    if (confirmState?.success) toast.success('Confirmed — customer credited 1 mango 🥭');
+    if (confirmState?.success) toast.success('Confirmed — customer credited 1 point');
     if (confirmState?.error) toast.error(confirmState.error);
   }, [confirmState]);
 
@@ -187,7 +187,7 @@ function BugRow({ report }: { report: BugReport }) {
                       disabled={confirmPending}
                       className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {confirmPending ? 'Saving…' : 'Confirm — grant 1 mango 🥭'}
+                      {confirmPending ? 'Saving…' : 'Confirm — grant 1 point'}
                     </button>
                   </form>
                   <button

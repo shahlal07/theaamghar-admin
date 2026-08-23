@@ -69,6 +69,7 @@ export async function updateOrderStatus(
       to: email,
       orderNumber: updated.order_number,
       status: parsed.data.status,
+      businessName: admin.vendor_name,
     });
   }
 
@@ -134,6 +135,7 @@ export async function bulkUpdateOrderStatus(
         to: email,
         orderNumber: o.order_number,
         status: parsed.data.status,
+        businessName: admin.vendor_name,
       });
     })
   );
@@ -267,13 +269,14 @@ export async function verifyPayment(
   const email = await getCustomerEmail(supabase, order.customer_id);
   if (email) {
     if (d.approve) {
-      await sendPaymentApprovedEmail({ to: email, orderNumber: order.order_number, total: order.total });
+      await sendPaymentApprovedEmail({ to: email, orderNumber: order.order_number, total: order.total, businessName: admin.vendor_name });
     } else {
       // d.rejectionReason is guaranteed non-null here by the check above.
       await sendPaymentRejectedEmail({
         to: email,
         orderNumber: order.order_number,
         reason: d.rejectionReason!,
+        businessName: admin.vendor_name,
       });
     }
   }

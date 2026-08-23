@@ -110,7 +110,7 @@ function ReplyForm({ review, onDone }: { review: Review; onDone: () => void }) {
     >
       <div className="mb-1 flex items-center justify-between">
         <label className="block text-xs font-medium uppercase tracking-wide text-[var(--text-light)]">
-          Reply as TheAamGhar
+          Your public reply
         </label>
         <button
           type="button"

@@ -46,7 +46,8 @@ export async function sendAnnouncement(
   const { data: customers, error: fetchError } = await supabase
     .from('profiles')
     .select('id, email, notification_prefs')
-    .eq('role', 'customer');
+    .eq('role', 'customer')
+    .eq('vendor_id', admin.vendor_id);
 
   if (fetchError) return { error: 'Failed to load customers.' };
 
@@ -75,7 +76,7 @@ export async function sendAnnouncement(
   await Promise.all(
     recipients
       .filter((r) => r.email)
-      .map((r) => sendAnnouncementEmail({ to: r.email!, title, message }))
+      .map((r) => sendAnnouncementEmail({ to: r.email!, title, message, businessName: admin.vendor_name }))
   );
 
   await logAdminAction(admin, 'send_announcement', 'customer_notifications', null, {

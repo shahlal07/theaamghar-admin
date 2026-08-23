@@ -26,7 +26,7 @@ function pick<T>(items: T[], seed: string): T {
 }
 
 const POSITIVE_TEMPLATES = (name: string, product: string) => [
-  `Thank you so much, ${name}! We're thrilled you enjoyed the ${product} — reviews like this make our day. Looking forward to serving you again soon! 🥭`,
+  `Thank you so much, ${name}! We're thrilled you enjoyed the ${product} — reviews like this make our day. Looking forward to serving you again soon! 🎉`,
   `${name}, this really made us smile! Thank you for taking the time to share your experience with the ${product}. We can't wait to have you order again.`,
   `We're so glad the ${product} hit the spot, ${name}! Thanks for the kind words — it means a lot to our small team.`,
 ];

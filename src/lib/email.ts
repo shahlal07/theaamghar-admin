@@ -42,14 +42,14 @@ function htmlToText(html: string): string {
 
 // Best-effort: a failed send must never fail the admin action (status
 // update / payment verification) that already succeeded in the database.
-async function sendMail(to: string, subject: string, html: string): Promise<void> {
+async function sendMail(to: string, subject: string, html: string, businessName: string): Promise<void> {
   if (!transporter || !GMAIL_USER) {
     console.warn(`[email] Skipped "${subject}" to ${to} -- GMAIL_USER/GMAIL_APP_PASSWORD not set.`);
     return;
   }
   try {
     await transporter.sendMail({
-      from: `"TheAamGhar" <${GMAIL_USER}>`,
+      from: `"${businessName}" <${GMAIL_USER}>`,
       to,
       subject,
       text: htmlToText(html),
@@ -60,17 +60,17 @@ async function sendMail(to: string, subject: string, html: string): Promise<void
   }
 }
 
-function wrapEmail(bodyHtml: string): string {
+function wrapEmail(bodyHtml: string, businessName: string): string {
   return `
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;">
       <div style="background:#FF6B00;padding:20px 24px;border-radius:12px 12px 0 0;">
-        <span style="color:#fff;font-size:20px;font-weight:700;">TheAamGhar</span>
+        <span style="color:#fff;font-size:20px;font-weight:700;">${businessName}</span>
       </div>
       <div style="background:#fff;border:1px solid #eee;border-top:none;border-radius:0 0 12px 12px;padding:24px;color:#2D2D2D;">
         ${bodyHtml}
       </div>
       <p style="text-align:center;color:#999;font-size:12px;margin-top:16px;">
-        TheAamGhar — Premium Pakistani Mangoes
+        ${businessName}
       </p>
     </div>
   `;
@@ -78,9 +78,9 @@ function wrapEmail(bodyHtml: string): string {
 
 const STATUS_COPY: Record<string, { emoji: string; message: string }> = {
   confirmed: { emoji: '✅', message: 'Your order is confirmed and headed to our packing table.' },
-  packed: { emoji: '📦', message: 'Your mangoes are packed and waiting for pickup.' },
+  packed: { emoji: '📦', message: 'Your order is packed and waiting for pickup.' },
   shipped: { emoji: '🚚', message: 'Your order is on its way!' },
-  delivered: { emoji: '🥭', message: 'Delivered — enjoy your mangoes!' },
+  delivered: { emoji: '🎉', message: 'Delivered — enjoy!' },
   cancelled: { emoji: '❌', message: 'Your order has been cancelled.' },
   refunded: { emoji: '↩️', message: 'Your order has been refunded.' },
 };
@@ -91,6 +91,7 @@ export async function sendOrderStatusUpdateEmail(params: {
   status: string;
   trackingNumber?: string | null;
   courierName?: string | null;
+  businessName: string;
 }): Promise<void> {
   const copy = STATUS_COPY[params.status];
   if (!copy) return; // pending has no customer-facing email -- nothing changed from their view yet
@@ -106,41 +107,44 @@ export async function sendOrderStatusUpdateEmail(params: {
     <p>${copy.message}</p>
     ${trackingLine}
     <a href="${trackUrl}" style="display:inline-block;margin-top:16px;background:#FF6B00;color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;">Track Your Order</a>
-  `);
-  await sendMail(params.to, `Order ${params.orderNumber} — ${copy.message}`, html);
+  `, params.businessName);
+  await sendMail(params.to, `Order ${params.orderNumber} — ${copy.message}`, html, params.businessName);
 }
 
 export async function sendAnnouncementEmail(params: {
   to: string;
   title: string;
   message: string;
+  businessName: string;
 }): Promise<void> {
   const html = wrapEmail(`
     <h2 style="margin-top:0;">${params.title}</h2>
     <p style="white-space:pre-wrap;">${params.message}</p>
     <a href="${SITE_URL}" style="display:inline-block;margin-top:16px;background:#FF6B00;color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;">Shop Now</a>
-  `);
-  await sendMail(params.to, params.title, html);
+  `, params.businessName);
+  await sendMail(params.to, params.title, html, params.businessName);
 }
 
 export async function sendPaymentApprovedEmail(params: {
   to: string;
   orderNumber: string;
   total: number;
+  businessName: string;
 }): Promise<void> {
   const trackUrl = `${SITE_URL}/track?order=${params.orderNumber}`;
   const html = wrapEmail(`
     <h2 style="margin-top:0;">✅ Payment Verified</h2>
-    <p>We've confirmed your ${formatPKR(params.total)} payment for order <strong>${params.orderNumber}</strong> — it's now headed through our kitchen and packing.</p>
+    <p>We've confirmed your ${formatPKR(params.total)} payment for order <strong>${params.orderNumber}</strong> — it's now headed through processing and packing.</p>
     <a href="${trackUrl}" style="display:inline-block;margin-top:16px;background:#FF6B00;color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;">Track Your Order</a>
-  `);
-  await sendMail(params.to, `Payment Verified — ${params.orderNumber}`, html);
+  `, params.businessName);
+  await sendMail(params.to, `Payment Verified — ${params.orderNumber}`, html, params.businessName);
 }
 
 export async function sendPaymentRejectedEmail(params: {
   to: string;
   orderNumber: string;
   reason: string;
+  businessName: string;
 }): Promise<void> {
   const trackUrl = `${SITE_URL}/track?order=${params.orderNumber}`;
   const html = wrapEmail(`
@@ -149,6 +153,6 @@ export async function sendPaymentRejectedEmail(params: {
     <p style="background:#fdf0ef;border-radius:8px;padding:12px 16px;">${params.reason}</p>
     <p>Please visit your tracking page to re-upload your payment proof, or reach out to us on WhatsApp.</p>
     <a href="${trackUrl}" style="display:inline-block;margin-top:16px;background:#FF6B00;color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;">Go to Order</a>
-  `);
-  await sendMail(params.to, `Action Needed — Payment for ${params.orderNumber}`, html);
+  `, params.businessName);
+  await sendMail(params.to, `Action Needed — Payment for ${params.orderNumber}`, html, params.businessName);
 }

@@ -9,11 +9,13 @@ import type { AdminRole } from '@/lib/dal';
 export function AdminShell({
   name,
   role,
+  businessName,
   notifications,
   children,
 }: {
   name: string;
   role: AdminRole;
+  businessName: string;
   notifications: AdminNotification[];
   children: React.ReactNode;
 }) {
@@ -21,7 +23,7 @@ export function AdminShell({
 
   return (
     <div className="min-h-screen bg-[var(--surface-sunken)]">
-      <Sidebar open={sidebarOpen} role={role} />
+      <Sidebar open={sidebarOpen} role={role} businessName={businessName} />
       {sidebarOpen && (
         <button
           type="button"

@@ -16,7 +16,14 @@ function isItemActive(pathname: string, href: string): boolean {
   return href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
 }
 
-export function Sidebar({ open, role }: { open: boolean; role: AdminRole }) {
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+export function Sidebar({ open, role, businessName }: { open: boolean; role: AdminRole; businessName: string }) {
   const pathname = usePathname();
   const visibleItems = NAV_ITEMS.filter((item) => role === 'admin' || !item.adminOnly);
   const mainItems = visibleItems.filter((item) => item.section === 'Main');
@@ -50,11 +57,9 @@ export function Sidebar({ open, role }: { open: boolean; role: AdminRole }) {
     >
       <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] px-5 py-5">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--mango-orange)] text-sm font-extrabold text-white shadow-md">
-          AG
+          {initials(businessName)}
         </div>
-        <div className="text-lg font-bold text-[var(--text)]">
-          The<span className="text-[var(--mango-orange)]">AamGhar</span>
-        </div>
+        <div className="text-lg font-bold text-[var(--text)] truncate">{businessName}</div>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
