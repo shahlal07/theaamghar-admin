@@ -1,7 +1,12 @@
 import 'server-only';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.3-70b-versatile';
+// llama-3.3-70b-versatile was retired from Groq's catalog (verified via
+// GET /openai/v1/models). gpt-oss-120b is its replacement -- it's a
+// reasoning model, so reasoning_effort:"low" below is required or it can
+// burn the whole max_tokens budget on hidden chain-of-thought and return
+// an empty message.content (confirmed by testing directly against Groq).
+const MODEL = 'openai/gpt-oss-120b';
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -31,11 +36,13 @@ export async function groqComplete(
       messages,
       temperature: options?.temperature ?? 0.6,
       max_tokens: options?.maxTokens ?? 400,
+      reasoning_effort: 'low',
     }),
   });
 
   if (!res.ok) {
     const body = await res.text();
+    console.error('[groq] API error', res.status, body.slice(0, 500));
     throw new Error(`Groq API error (${res.status}): ${body.slice(0, 300)}`);
   }
 
