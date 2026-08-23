@@ -51,6 +51,10 @@ export function SupportClient({
     if (startState?.success && startState.conversationId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- useActionState has no completion callback
       setConversationId(startState.conversationId);
+      if (startState.message) {
+        const msg = startState.message;
+        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      }
       setDraft('');
     }
     if (startState?.error) toast.error(startState.error);
@@ -58,7 +62,11 @@ export function SupportClient({
 
   useEffect(() => {
     if (replyState?.success) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (replyState.message) {
+        const msg = replyState.message;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- useActionState has no completion callback
+        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      }
       setDraft('');
     }
     if (replyState?.error) toast.error(replyState.error);
