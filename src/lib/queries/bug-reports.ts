@@ -28,6 +28,11 @@ export async function getBugReports(statusFilter?: string): Promise<BugReport[]>
     .select(
       'id, profile_id, title, description, status, ai_reply, admin_note, reward_granted, screenshot_path, created_at, reviewed_at'
     )
+    // This page reviews customer-submitted reports (confirm -> reward a mango
+    // credit). Reports vendor admins file about the platform itself go
+    // straight to the superadmin instead (see /admin/report-bug) and would
+    // be nonsensical to "confirm for a reward" here, so they're excluded.
+    .eq('source', 'storefront')
     .order('created_at', { ascending: false });
 
   if (statusFilter && statusFilter !== 'all') {
