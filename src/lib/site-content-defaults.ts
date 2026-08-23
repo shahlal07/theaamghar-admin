@@ -16,6 +16,7 @@ export type SiteContent = {
     faviconUrl: string | null;
     accentEmoji: string;
     tagline: string;
+    paymentBadgeText: string | null;
   };
   brandColors: {
     primary: string;
@@ -31,6 +32,7 @@ export type SiteContent = {
     ctaPrimaryText: string;
     ctaSecondaryText: string;
     desktopVideoUrl: string;
+    desktopImageUrl: string;
     mobileImageUrl: string;
   };
   story: {
@@ -129,6 +131,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     faviconUrl: null,
     accentEmoji: "🥭",
     tagline: "Premium Pakistani mangoes delivered fresh to your doorstep.",
+    paymentBadgeText: "COD Available",
   },
   brandColors: {
     primary: "#ff6b00",
@@ -145,6 +148,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     ctaPrimaryText: "Shop This Harvest",
     ctaSecondaryText: "Meet the Orchard",
     desktopVideoUrl: "/videos/mango-branch-closeup.mp4",
+    desktopImageUrl: "",
     mobileImageUrl: "/images/hero-mango-mobile.jpg",
   },
   story: {
