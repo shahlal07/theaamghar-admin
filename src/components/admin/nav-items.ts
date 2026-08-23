@@ -24,6 +24,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Coupons', href: '/admin/coupons', section: 'Management', adminOnly: true },
   { label: 'Reviews', href: '/admin/reviews', section: 'Management' },
   { label: 'Bug Reports', href: '/admin/bugs', section: 'Management' },
+  { label: 'Support', href: '/admin/support', section: 'Main' },
+  { label: 'Report a Bug', href: '/admin/report-bug', section: 'Settings' },
   { label: 'Rewards & Referrals', href: '/admin/loyalty', section: 'Insights', adminOnly: true },
   { label: 'Announcements', href: '/admin/announcements', section: 'Insights', adminOnly: true },
   { label: 'Analytics', href: '/admin/analytics', section: 'Insights' },

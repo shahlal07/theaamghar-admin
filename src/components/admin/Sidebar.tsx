@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_ITEMS } from './nav-items';
+import { SupportNavBadge } from './SupportNavBadge';
 import type { AdminRole } from '@/lib/dal';
 
 // "Main" items are always-visible buttons; every other section collapses
@@ -69,13 +70,14 @@ export function Sidebar({ open, role, businessName }: { open: boolean; role: Adm
             <Link
               key={item.href}
               href={item.href}
-              className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
+              className={`flex items-center rounded-lg px-3 py-2 text-sm font-medium transition ${
                 active
                   ? 'bg-[var(--mango-orange)]/15 text-[var(--mango-orange)]'
                   : 'text-[var(--text-light)] hover:bg-[var(--mango-orange)]/8 hover:text-[var(--text)]'
               }`}
             >
               {item.label}
+              {item.href === '/admin/support' && <SupportNavBadge />}
             </Link>
           );
         })}
