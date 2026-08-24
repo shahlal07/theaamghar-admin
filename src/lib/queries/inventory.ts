@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminUser } from '@/lib/dal';
 
 export type StockState = 'out_of_stock' | 'low_stock' | 'in_stock';
 
@@ -15,7 +16,7 @@ export function getStockState(stockQty: number, lowStockThreshold: number): Stoc
 // to branch on product_type.
 export type InventoryUnit = {
   id: string;
-  source: 'box_size' | 'variant';
+  source: 'box_size' | 'variant' | 'simple';
   product_id: string;
   product_name: string;
   label: string;
@@ -48,33 +49,58 @@ export async function getInventoryData(): Promise<{
   auditLog: AuditLogEntry[];
 }> {
   const supabase = await createClient();
+  const admin = await getAdminUser();
 
+  // Explicit vendor_id filters here, not just a reliance on RLS: the
+  // "publicly readable when product is published" SELECT policies on
+  // product_box_sizes/product_variants gate on `is_staff_or_admin()` alone
+  // (not scoped to the caller's own vendor like the UPDATE/DELETE policies
+  // are), so without this filter every vendor admin would see every other
+  // vendor's stock levels here. inventory_audit_log has no such loophole
+  // (no public SELECT policy at all) but is filtered too for consistency
+  // and to keep the "recent activity" list scoped to this vendor's own
+  // orders/adjustments.
   const [
     { data: boxSizes, error: boxSizesError },
     { data: variants, error: variantsError },
+    { data: simpleProducts, error: simpleError },
     { data: auditLog, error: auditError },
   ] = await Promise.all([
     supabase
       .from('product_box_sizes')
       .select('id, product_id, box_size_kg, stock_qty, low_stock_threshold, active, products(name)')
+      .eq('vendor_id', admin.vendor_id)
       .order('product_id')
       .order('box_size_kg'),
     supabase
       .from('product_variants')
       .select('id, product_id, attributes, label, stock_qty, low_stock_threshold, active, products(name)')
+      .eq('vendor_id', admin.vendor_id)
       .order('product_id')
       .order('sort_order'),
+    // 'simple' model products (single price/stock on the product row
+    // itself, no box_sizes/variants rows) -- product_type is only ever
+    // literally 'simple' for products created/edited through the new
+    // category-schema-driven form.
+    supabase
+      .from('products')
+      .select('id, name, status, stock_qty, low_stock_threshold')
+      .eq('vendor_id', admin.vendor_id)
+      .eq('product_type', 'simple')
+      .not('stock_qty', 'is', null),
     supabase
       .from('inventory_audit_log')
       .select(
         'id, change_qty, previous_qty, new_qty, reason, note, created_at, product_box_sizes(box_size_kg), product_variants(attributes, label), products(name)'
       )
+      .eq('vendor_id', admin.vendor_id)
       .order('created_at', { ascending: false })
       .limit(50),
   ]);
 
   if (boxSizesError) throw new Error(`Failed to load inventory: ${boxSizesError.message}`);
   if (variantsError) throw new Error(`Failed to load inventory: ${variantsError.message}`);
+  if (simpleError) throw new Error(`Failed to load inventory: ${simpleError.message}`);
   if (auditError) throw new Error(`Failed to load audit log: ${auditError.message}`);
 
   type BoxSizeRow = {
@@ -140,8 +166,34 @@ export async function getInventoryData(): Promise<{
     state: getStockState(v.stock_qty, v.low_stock_threshold),
   }));
 
+  type SimpleProductRow = {
+    id: string;
+    name: string;
+    status: string;
+    stock_qty: number | null;
+    low_stock_threshold: number;
+  };
+
+  // 'simple' products have exactly one sellable unit -- the product row
+  // itself -- so there's no separate active/inactive toggle the way a box
+  // size or variant row has; it's considered active whenever the product
+  // isn't archived.
+  const simpleUnits: InventoryUnit[] = ((simpleProducts ?? []) as SimpleProductRow[])
+    .filter((p) => p.stock_qty !== null)
+    .map((p) => ({
+      id: p.id,
+      source: 'simple',
+      product_id: p.id,
+      product_name: p.name,
+      label: 'Standard',
+      stock_qty: p.stock_qty as number,
+      low_stock_threshold: p.low_stock_threshold,
+      active: p.status !== 'archived',
+      state: getStockState(p.stock_qty as number, p.low_stock_threshold),
+    }));
+
   return {
-    units: [...boxUnits, ...variantUnits],
+    units: [...boxUnits, ...variantUnits, ...simpleUnits],
     auditLog: ((auditLog ?? []) as AuditRow[]).map((a) => {
       const box = oneOrNull(a.product_box_sizes);
       const variant = oneOrNull(a.product_variants);

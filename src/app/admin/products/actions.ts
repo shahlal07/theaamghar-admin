@@ -6,7 +6,14 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminUser } from '@/lib/dal';
 import { logAdminAction } from '@/lib/audit-log';
-import { getVendorId } from '@/lib/queries/products';
+import {
+  legacyColumnForField,
+  normalizeProductModel,
+  productLevelFields,
+  productTypeValueForSchema,
+  type CategorySchema,
+} from '@/lib/product-types';
+import { getCategorySchema } from '@/lib/category-schema.server';
 
 export type ActionState = { error?: string; success?: boolean } | undefined;
 export type UploadState = { error?: string; urls?: string[] } | undefined;
@@ -37,12 +44,7 @@ const ProductSchema = z.object({
     .min(1, 'Slug is required.')
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Slug must be lowercase, hyphen-separated.'),
   categoryId: z.uuid().nullable(),
-  productType: z.enum(['fruit', 'clothing', 'other']),
   unitCost: z.number().min(0).nullable(),
-  origin: z.string().nullable(),
-  season: z.string().nullable(),
-  sweetness: z.string().nullable(),
-  fiber: z.string().nullable(),
   tagline: z.string().nullable(),
   description: z.array(z.string()),
   discountPrice: z.number().min(0).nullable(),
@@ -61,14 +63,14 @@ const ProductSchema = z.object({
   isSeasonal: z.boolean(),
   harvestSeasonStart: z.string().nullable(),
   harvestSeasonEnd: z.string().nullable(),
+  sellingPrice: z.number().min(0).nullable(),
+  stockQty: z.number().int().min(0).nullable(),
+  lowStockThreshold: z.number().int().min(0),
   boxSizes: z.array(BoxSizeSchema),
   variants: z.array(VariantSchema),
-  // Kept as a raw string, not parsed here -- unlike boxSizes/description/
-  // gallery (all built exclusively by this form's own UI, so a parse
-  // failure there can safely fall back to []), attributesJson can be
-  // hand-typed by an admin for the 'other' product type, so an invalid
-  // value needs to surface as a real error, not silently become {}. See
-  // the JSON.parse + explicit error return in createProduct/updateProduct.
+  // Freeform key/value pairs for the vendor's category schema fields --
+  // built entirely by this form's own dynamic-field UI (never hand-typed),
+  // so a parse failure can safely fall back to {}.
   attributesJson: z.string(),
 });
 
@@ -96,12 +98,7 @@ function parseProductForm(formData: FormData) {
     name: raw.name,
     slug: raw.slug,
     categoryId: strOrNull(raw.categoryId),
-    productType: raw.productType || 'fruit',
     unitCost: numOrNull(raw.unitCost),
-    origin: strOrNull(raw.origin),
-    season: strOrNull(raw.season),
-    sweetness: strOrNull(raw.sweetness),
-    fiber: strOrNull(raw.fiber),
     tagline: strOrNull(raw.tagline),
     description,
     discountPrice: numOrNull(raw.discountPrice),
@@ -120,6 +117,9 @@ function parseProductForm(formData: FormData) {
     isSeasonal: raw.isSeasonal === 'true',
     harvestSeasonStart: strOrNull(raw.harvestSeasonStart),
     harvestSeasonEnd: strOrNull(raw.harvestSeasonEnd),
+    sellingPrice: numOrNull(raw.sellingPrice),
+    stockQty: raw.stockQty === undefined || raw.stockQty === '' ? null : parseInt(String(raw.stockQty), 10),
+    lowStockThreshold: parseInt(String(raw.lowStockThreshold || '5'), 10),
     boxSizes,
     variants,
     attributesJson: String(raw.attributesJson ?? '{}'),
@@ -131,12 +131,45 @@ function parseAttributes(json: string): { attributes?: Record<string, unknown>; 
   try {
     parsed = JSON.parse(json);
   } catch {
-    return { error: 'Attributes must be valid JSON -- check for a missing quote, comma, or bracket.' };
+    return { error: 'Attributes must be valid JSON.' };
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { error: 'Attributes must be a JSON object (e.g. { "fabric": "Cotton" }).' };
+    return { error: 'Attributes must be a JSON object.' };
   }
   return { attributes: parsed as Record<string, unknown> };
+}
+
+// Splits the vendor-category schema's fields between the 4 legacy dedicated
+// columns (origin/season/sweetness/fiber -- kept for Fruits backward
+// compatibility) and everything else (written into attributes jsonb). See
+// product-types.ts's legacyColumnForField for why these 4 are special.
+function splitAttributesForColumns(
+  schema: CategorySchema,
+  attributes: Record<string, unknown>
+): {
+  attributes: Record<string, unknown>;
+  origin: string | null;
+  season: string | null;
+  sweetness: string | null;
+  fiber: string | null;
+} {
+  const legacy: Record<'origin' | 'season' | 'sweetness' | 'fiber', string | null> = {
+    origin: null,
+    season: null,
+    sweetness: null,
+    fiber: null,
+  };
+  const rest: Record<string, unknown> = {};
+  for (const f of productLevelFields(schema)) {
+    const column = legacyColumnForField(f.label);
+    const value = attributes[f.key];
+    if (column) {
+      legacy[column] = typeof value === 'string' && value.trim() !== '' ? value : null;
+    } else {
+      rest[f.key] = value ?? '';
+    }
+  }
+  return { attributes: rest, ...legacy };
 }
 
 export async function createProduct(
@@ -145,32 +178,39 @@ export async function createProduct(
 ): Promise<ActionState> {
   const admin = await getAdminUser();
 
+  const schema = await getCategorySchema(admin.vendor_category);
+  if (!schema) {
+    return { error: 'Ask your platform admin to assign a product category to your store first.' };
+  }
+
   const parsed = parseProductForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
   }
 
-  const { attributes, error: attrError } = parseAttributes(parsed.data.attributesJson);
+  const { attributes: rawAttributes, error: attrError } = parseAttributes(parsed.data.attributesJson);
   if (attrError) return { error: attrError };
 
-  const supabase = await createClient();
   const d = parsed.data;
-  const vendorId = await getVendorId();
+  const model = schema.model;
+  const { attributes, origin, season, sweetness, fiber } = splitAttributesForColumns(schema, rawAttributes ?? {});
+
+  const supabase = await createClient();
 
   const { data: product, error } = await supabase
     .from('products')
     .insert({
-      vendor_id: vendorId,
+      vendor_id: admin.vendor_id,
       category_id: d.categoryId,
       slug: d.slug,
       name: d.name,
-      product_type: d.productType,
+      product_type: productTypeValueForSchema(schema),
       attributes,
       unit_cost: d.unitCost,
-      origin: d.origin,
-      season: d.season,
-      sweetness: d.sweetness,
-      fiber: d.fiber,
+      origin,
+      season,
+      sweetness,
+      fiber,
       tagline: d.tagline,
       description: d.description,
       discount_price: d.discountPrice,
@@ -189,10 +229,16 @@ export async function createProduct(
       is_seasonal: d.isSeasonal,
       harvest_season_start: d.harvestSeasonStart,
       harvest_season_end: d.harvestSeasonEnd,
-      // price/unit are intentionally omitted -- derived automatically by
-      // the sync_product_price_unit trigger from the cheapest active
-      // box size/variant, not admin-entered (see box_sizes/variants insert
-      // below, which fires that trigger once inserted).
+      selling_price: model === 'simple' ? d.sellingPrice : null,
+      stock_qty: model === 'simple' ? d.stockQty : null,
+      low_stock_threshold: d.lowStockThreshold,
+      // For weight_based/variant_based products, price/unit are derived
+      // automatically by the sync_product_price_unit trigger from the
+      // cheapest active box size/variant (fired by the box_sizes/variants
+      // insert below). 'simple' products have no box_sizes/variants rows to
+      // fire that trigger at all, so their price has to be set directly
+      // here from selling_price instead.
+      ...(model === 'simple' ? { price: d.sellingPrice, unit: null } : {}),
     })
     .select('id')
     .single();
@@ -201,7 +247,7 @@ export async function createProduct(
     return { error: `Failed to create product: ${error?.message ?? 'unknown error'}` };
   }
 
-  if (d.boxSizes.length > 0) {
+  if (model === 'weight_based' && d.boxSizes.length > 0) {
     const { error: boxError } = await supabase.from('product_box_sizes').insert(
       d.boxSizes.map((b) => ({
         product_id: product.id,
@@ -217,7 +263,7 @@ export async function createProduct(
     }
   }
 
-  if (d.variants.length > 0) {
+  if (model === 'variant_based' && d.variants.length > 0) {
     const { error: variantError } = await supabase.from('product_variants').insert(
       d.variants.map((v) => ({
         product_id: product.id,
@@ -251,28 +297,39 @@ export async function updateProduct(
     return { error: 'Invalid product id.' };
   }
 
+  const schema = await getCategorySchema(admin.vendor_category);
+  if (!schema) {
+    return { error: 'Ask your platform admin to assign a product category to your store first.' };
+  }
+
   const parsed = parseProductForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
   }
 
-  const { attributes, error: attrError } = parseAttributes(parsed.data.attributesJson);
+  const { attributes: rawAttributes, error: attrError } = parseAttributes(parsed.data.attributesJson);
   if (attrError) return { error: attrError };
 
   const supabase = await createClient();
   const d = parsed.data;
+  const model = schema.model;
+  const { attributes, origin, season, sweetness, fiber } = splitAttributesForColumns(schema, rawAttributes ?? {});
 
   // Retyping a product with real stock/order history is a correctness
-  // hazard for the stock/profit triggers (they key off product_type to
-  // decide which cost formula and which variant table to use) -- block it
-  // rather than let the UI silently start writing to the wrong table.
+  // hazard (the stock triggers key off which table -- box_sizes/variants/
+  // the product row itself -- actually has rows, and switching model out
+  // from under existing rows leaves them orphaned) -- block it rather than
+  // let the UI silently start writing to the wrong table. This can now only
+  // happen when the superadmin reassigns this vendor's category to one with
+  // a different model after products already exist, since the model itself
+  // is no longer admin-chosen per product.
   const { data: currentProduct } = await supabase
     .from('products')
     .select('product_type')
     .eq('id', productId)
     .maybeSingle();
 
-  if (currentProduct && currentProduct.product_type !== d.productType) {
+  if (currentProduct && normalizeProductModel(currentProduct.product_type) !== model) {
     const [{ count: boxSizeCount }, { count: variantCount }, { data: hasHistory }] = await Promise.all([
       supabase
         .from('product_box_sizes')
@@ -287,7 +344,7 @@ export async function updateProduct(
     if ((boxSizeCount ?? 0) > 0 || (variantCount ?? 0) > 0 || hasHistory) {
       return {
         error:
-          'Cannot change product type once it has box sizes/variants or has been ordered. Remove them first, or create a new product instead.',
+          'Your store’s category changed and this product can’t be converted automatically because it already has stock/order history. Remove its box sizes/variants first, or create a new product instead.',
       };
     }
   }
@@ -298,13 +355,13 @@ export async function updateProduct(
       category_id: d.categoryId,
       slug: d.slug,
       name: d.name,
-      product_type: d.productType,
+      product_type: productTypeValueForSchema(schema),
       attributes,
       unit_cost: d.unitCost,
-      origin: d.origin,
-      season: d.season,
-      sweetness: d.sweetness,
-      fiber: d.fiber,
+      origin,
+      season,
+      sweetness,
+      fiber,
       tagline: d.tagline,
       description: d.description,
       discount_price: d.discountPrice,
@@ -323,8 +380,14 @@ export async function updateProduct(
       is_seasonal: d.isSeasonal,
       harvest_season_start: d.harvestSeasonStart,
       harvest_season_end: d.harvestSeasonEnd,
+      low_stock_threshold: d.lowStockThreshold,
       updated_at: new Date().toISOString(),
-      // price/unit intentionally omitted -- see createProduct's comment.
+      // price/unit: see createProduct's comment. For 'simple' products
+      // there are no box_sizes/variants rows to fire the sync trigger, so
+      // selling_price/price/unit are set directly here too.
+      ...(model === 'simple'
+        ? { selling_price: d.sellingPrice, stock_qty: d.stockQty, price: d.sellingPrice, unit: null }
+        : { selling_price: null, stock_qty: null }),
     })
     .eq('id', productId);
 
