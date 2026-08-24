@@ -23,7 +23,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Shipping', href: '/admin/shipping', section: 'Management', adminOnly: true },
   { label: 'Coupons', href: '/admin/coupons', section: 'Management', adminOnly: true },
   { label: 'Reviews', href: '/admin/reviews', section: 'Management' },
-  { label: 'Bug Reports', href: '/admin/bugs', section: 'Management' },
   { label: 'Support', href: '/admin/support', section: 'Main' },
   { label: 'Report a Bug', href: '/admin/report-bug', section: 'Settings' },
   { label: 'Rewards & Referrals', href: '/admin/loyalty', section: 'Insights', adminOnly: true },
