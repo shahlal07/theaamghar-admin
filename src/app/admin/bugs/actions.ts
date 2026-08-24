@@ -76,8 +76,20 @@ export async function rejectBugReport(_prev: ActionState, formData: FormData): P
 // the <img> in the client needs a freshly-minted signed URL on demand
 // instead of a stored public one.
 export async function getBugReportScreenshotUrl(path: string): Promise<string | null> {
-  await getAdminUser();
+  const admin = await getAdminUser();
   const supabase = await createClient();
+  // Path is keyed by customer uid, not vendor -- verify a real bug_reports
+  // row for this admin's own vendor references this screenshot before
+  // minting a URL (this Server Action is directly invocable with an
+  // arbitrary path).
+  const { data: owningReport } = await supabase
+    .from('bug_reports')
+    .select('id')
+    .eq('vendor_id', admin.vendor_id)
+    .eq('screenshot_path', path)
+    .maybeSingle();
+  if (!owningReport) return null;
+
   const { data, error } = await supabase.storage
     .from('bug-report-screenshots')
     .createSignedUrl(path, 60 * 10);

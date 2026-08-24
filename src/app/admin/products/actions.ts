@@ -251,6 +251,7 @@ export async function createProduct(
     const { error: boxError } = await supabase.from('product_box_sizes').insert(
       d.boxSizes.map((b) => ({
         product_id: product.id,
+        vendor_id: admin.vendor_id,
         box_size_kg: b.box_size_kg,
         selling_price: b.selling_price,
         stock_qty: b.stock_qty,
@@ -267,6 +268,7 @@ export async function createProduct(
     const { error: variantError } = await supabase.from('product_variants').insert(
       d.variants.map((v) => ({
         product_id: product.id,
+        vendor_id: admin.vendor_id,
         attributes: v.attributes,
         label: v.label,
         selling_price: v.selling_price,
@@ -428,6 +430,7 @@ export async function updateProduct(
     } else {
       const { error: insError } = await supabase.from('product_box_sizes').insert({
         product_id: productId,
+        vendor_id: admin.vendor_id,
         box_size_kg: b.box_size_kg,
         selling_price: b.selling_price,
         stock_qty: b.stock_qty,
@@ -476,6 +479,7 @@ export async function updateProduct(
     } else {
       const { error: insVariantError } = await supabase.from('product_variants').insert({
         product_id: productId,
+        vendor_id: admin.vendor_id,
         attributes: v.attributes,
         label: v.label,
         selling_price: v.selling_price,
@@ -531,7 +535,7 @@ export async function uploadProductImages(
   _prev: UploadState,
   formData: FormData
 ): Promise<UploadState> {
-  await getAdminUser();
+  const admin = await getAdminUser();
 
   const folder = String(formData.get('folder') || 'misc').replace(/[^a-z0-9-]/gi, '');
   const files = formData.getAll('files').filter((f): f is File => f instanceof File && f.size > 0);
@@ -553,7 +557,11 @@ export async function uploadProductImages(
 
   for (const file of files) {
     const ext = file.name.split('.').pop() || 'jpg';
-    const path = `${folder}/${crypto.randomUUID()}.${ext}`;
+    // Storage RLS requires the vendor's own uuid as the first path segment
+    // (storage.foldername(name)[1] = current_vendor_id()) -- uploading to
+    // just `${folder}/...` (the product slug) failed that check for every
+    // vendor, so no product image could ever actually upload.
+    const path = `${admin.vendor_id}/${folder}/${crypto.randomUUID()}.${ext}`;
     const { error: uploadError } = await supabase.storage
       .from('product-images')
       .upload(path, file, { contentType: file.type, upsert: false });

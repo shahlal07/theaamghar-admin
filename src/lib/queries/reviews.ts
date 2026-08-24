@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminUser } from '@/lib/dal';
 
 export type Review = {
   id: string;
@@ -25,6 +26,7 @@ export type Review = {
 // ambiguous with no error surfaced. Reviews/products/profiles counts are
 // all small enough that this costs nothing in practice.
 export async function getReviews(): Promise<Review[]> {
+  const admin = await getAdminUser();
   const supabase = await createClient();
 
   const { data: reviews, error } = await supabase
@@ -32,6 +34,7 @@ export async function getReviews(): Promise<Review[]> {
     .select(
       'id, product_id, profile_id, rating, title, body, verified_purchase, created_at, images, admin_reply_body, admin_reply_images, admin_reply_at'
     )
+    .eq('vendor_id', admin.vendor_id)
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Failed to load reviews: ${error.message}`);

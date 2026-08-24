@@ -27,7 +27,7 @@ export async function adjustStock(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  await getAdminUser();
+  const admin = await getAdminUser();
 
   const rawNote = formData.get('note');
   const parsed = AdjustStockSchema.safeParse({
@@ -74,6 +74,7 @@ export async function adjustStock(
   if (updateError) return { error: `Failed to adjust stock: ${updateError.message}` };
 
   const { error: logError } = await supabase.from('inventory_audit_log').insert({
+    vendor_id: admin.vendor_id,
     box_size_id: d.source === 'box_size' ? current.id : null,
     variant_id: d.source === 'variant' ? current.id : null,
     product_id: productId,

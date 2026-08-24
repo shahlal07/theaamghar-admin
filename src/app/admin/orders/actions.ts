@@ -293,8 +293,20 @@ export async function verifyPayment(
  * signed URL on demand instead.
  */
 export async function getPaymentProofUrl(path: string): Promise<string | null> {
-  await getAdminUser();
+  const admin = await getAdminUser();
   const supabase = await createClient();
+  // The storage path is keyed by customer uid, not vendor -- nothing in the
+  // path itself proves the caller's own vendor owns this proof. This Server
+  // Action is directly invocable with an arbitrary path, so verify against a
+  // real order belonging to the admin's vendor before ever minting a URL.
+  const { data: owningOrder } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('vendor_id', admin.vendor_id)
+    .ilike('payment_proof_url', `%${path}%`)
+    .maybeSingle();
+  if (!owningOrder) return null;
+
   const { data, error } = await supabase.storage
     .from('payment-proofs')
     .createSignedUrl(path, 60 * 10);

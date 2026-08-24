@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminUser } from '@/lib/dal';
 
 export type BugReport = {
   id: string;
@@ -21,6 +22,7 @@ export type BugReport = {
 // embed ambiguous to PostgREST. Same pattern already used in reviews.ts for
 // the same reason.
 export async function getBugReports(statusFilter?: string): Promise<BugReport[]> {
+  const admin = await getAdminUser();
   const supabase = await createClient();
 
   let query = supabase
@@ -33,6 +35,7 @@ export async function getBugReports(statusFilter?: string): Promise<BugReport[]>
     // straight to the superadmin instead (see /admin/report-bug) and would
     // be nonsensical to "confirm for a reward" here, so they're excluded.
     .eq('source', 'storefront')
+    .eq('vendor_id', admin.vendor_id)
     .order('created_at', { ascending: false });
 
   if (statusFilter && statusFilter !== 'all') {
