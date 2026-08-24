@@ -4,6 +4,19 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { logError } from '@/lib/log-error';
 
+// A stale JS chunk reference (page open across a deploy that replaced the
+// build, or a flaky connection) fails with one of these -- unstable_retry()
+// re-renders in place but can't fix it since the chunk URL itself is gone,
+// only a real reload re-fetches the current build.
+function isChunkLoadError(error: Error): boolean {
+  return (
+    error.name === "ChunkLoadError" ||
+    /Loading chunk [\d]+ failed|Failed to fetch dynamically imported module|Importing a module script failed/i.test(
+      error.message
+    )
+  );
+}
+
 export default function Error({
   error,
   unstable_retry,
@@ -13,6 +26,13 @@ export default function Error({
 }) {
   useEffect(() => {
     logError(error);
+    if (isChunkLoadError(error)) {
+      const key = "vendor_admin_chunk_reload_attempted";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+      }
+    }
   }, [error]);
 
   return (
@@ -24,7 +44,7 @@ export default function Error({
       <div className="flex items-center justify-center gap-3">
         <button
           type="button"
-          onClick={unstable_retry}
+          onClick={() => (isChunkLoadError(error) ? window.location.reload() : unstable_retry())}
           className="rounded-full bg-[var(--mango-orange)] px-8 py-3 font-semibold text-white transition hover:bg-[var(--mango-deep)]"
         >
           Try Again
