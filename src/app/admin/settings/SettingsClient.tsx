@@ -34,6 +34,9 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
   const [supportPhone, setSupportPhone] = useState(settings.support_phone ?? '');
   const [supportEmail, setSupportEmail] = useState(settings.support_email ?? '');
   const [supportWhatsapp, setSupportWhatsapp] = useState(settings.support_whatsapp ?? '');
+  const [whatsappOrderMessageTemplate, setWhatsappOrderMessageTemplate] = useState(
+    settings.whatsapp_order_message_template ?? ''
+  );
   const [businessAddress, setBusinessAddress] = useState(settings.business_address ?? '');
   const [googleMapsUrl, setGoogleMapsUrl] = useState(settings.google_maps_url ?? '');
   const [facebookUrl, setFacebookUrl] = useState(settings.facebook_url ?? '');
@@ -67,6 +70,7 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
         fd.set('supportPhone', supportPhone);
         fd.set('supportEmail', supportEmail);
         fd.set('supportWhatsapp', supportWhatsapp);
+        fd.set('whatsappOrderMessageTemplate', whatsappOrderMessageTemplate);
         fd.set('businessAddress', businessAddress);
         fd.set('googleMapsUrl', googleMapsUrl);
         fd.set('facebookUrl', facebookUrl);
@@ -213,6 +217,23 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
               className={inputClass}
             />
           </Field>
+          <div className="sm:col-span-2">
+            <Field label={'"Order via WhatsApp" message'}>
+              <textarea
+                value={whatsappOrderMessageTemplate}
+                onChange={(e) => setWhatsappOrderMessageTemplate(e.target.value)}
+                placeholder="Hi! I'd like to order {product}. Is it available?"
+                rows={2}
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-[var(--text-light)]">
+                Pre-filled text on every &quot;Order via WhatsApp&quot; button on your storefront. Use{' '}
+                <code className="rounded bg-[var(--surface-sunken)] px-1">{'{product}'}</code> and{' '}
+                <code className="rounded bg-[var(--surface-sunken)] px-1">{'{size}'}</code> as placeholders. Leave
+                blank to use the default message.
+              </p>
+            </Field>
+          </div>
         </div>
       </div>
 

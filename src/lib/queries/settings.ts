@@ -12,6 +12,7 @@ export type BusinessSettings = {
   support_phone: string | null;
   support_email: string | null;
   support_whatsapp: string | null;
+  whatsapp_order_message_template: string | null;
   business_address: string | null;
   google_maps_url: string | null;
   facebook_url: string | null;
@@ -29,7 +30,7 @@ export async function getBusinessSettings(): Promise<BusinessSettings> {
   const { data, error } = await supabase
     .from('business_settings')
     .select(
-      'payment_gateway_fee_percent, default_shipping_cost, currency, tax_percent, low_stock_alert_threshold, business_name, support_phone, support_email, support_whatsapp, business_address, google_maps_url, facebook_url, instagram_url, tiktok_url, youtube_url, twitter_url, welcome_discount_percent, welcome_discount_enabled'
+      'payment_gateway_fee_percent, default_shipping_cost, currency, tax_percent, low_stock_alert_threshold, business_name, support_phone, support_email, support_whatsapp, whatsapp_order_message_template, business_address, google_maps_url, facebook_url, instagram_url, tiktok_url, youtube_url, twitter_url, welcome_discount_percent, welcome_discount_enabled'
     )
     .eq('vendor_id', admin.vendor_id)
     .single();
