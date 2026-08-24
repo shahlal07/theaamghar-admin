@@ -22,6 +22,7 @@ export type BusinessSettings = {
   twitter_url: string | null;
   welcome_discount_percent: number;
   welcome_discount_enabled: boolean;
+  cod_enabled: boolean;
 };
 
 export async function getBusinessSettings(): Promise<BusinessSettings> {
@@ -30,7 +31,7 @@ export async function getBusinessSettings(): Promise<BusinessSettings> {
   const { data, error } = await supabase
     .from('business_settings')
     .select(
-      'payment_gateway_fee_percent, default_shipping_cost, currency, tax_percent, low_stock_alert_threshold, business_name, support_phone, support_email, support_whatsapp, whatsapp_order_message_template, business_address, google_maps_url, facebook_url, instagram_url, tiktok_url, youtube_url, twitter_url, welcome_discount_percent, welcome_discount_enabled'
+      'payment_gateway_fee_percent, default_shipping_cost, currency, tax_percent, low_stock_alert_threshold, business_name, support_phone, support_email, support_whatsapp, whatsapp_order_message_template, business_address, google_maps_url, facebook_url, instagram_url, tiktok_url, youtube_url, twitter_url, welcome_discount_percent, welcome_discount_enabled, cod_enabled'
     )
     .eq('vendor_id', admin.vendor_id)
     .single();

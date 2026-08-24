@@ -50,6 +50,7 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
   const [welcomeDiscountEnabled, setWelcomeDiscountEnabled] = useState(
     settings.welcome_discount_enabled
   );
+  const [codEnabled, setCodEnabled] = useState(settings.cod_enabled);
 
   const [state, formAction, pending] = useActionState(updateBusinessSettings, undefined);
 
@@ -80,6 +81,7 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
         fd.set('twitterUrl', twitterUrl);
         fd.set('welcomeDiscountPercent', String(welcomeDiscountPercent));
         fd.set('welcomeDiscountEnabled', String(welcomeDiscountEnabled));
+        fd.set('codEnabled', String(codEnabled));
         formAction(fd);
       }}
       className="space-y-6"
@@ -235,6 +237,24 @@ export function SettingsClient({ settings }: { settings: BusinessSettings }) {
             </Field>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Payment Methods</h2>
+        <label className="flex items-center gap-2 text-sm text-[var(--text)]">
+          <input
+            type="checkbox"
+            checked={codEnabled}
+            onChange={(e) => setCodEnabled(e.target.checked)}
+          />
+          Cash on Delivery
+        </label>
+        <p className="mt-2 text-xs text-[var(--text-light)]">
+          Turning this off removes Cash on Delivery from checkout on your storefront — customers
+          will only see Bank/Easypaisa/JazzCash transfer (whichever you have active accounts for).
+          If you have no manual payment accounts set up either, checkout has no payment method
+          available, so leave this on until you&apos;ve added at least one.
+        </p>
       </div>
 
       <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">

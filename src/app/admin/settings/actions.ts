@@ -34,6 +34,7 @@ const SettingsSchema = z.object({
   twitterUrl: urlField,
   welcomeDiscountPercent: z.number().min(0).max(100),
   welcomeDiscountEnabled: z.boolean(),
+  codEnabled: z.boolean(),
 });
 
 export async function updateBusinessSettings(
@@ -65,6 +66,7 @@ export async function updateBusinessSettings(
     twitterUrl: strOrNull(formData.get('twitterUrl')),
     welcomeDiscountPercent: Number(formData.get('welcomeDiscountPercent')),
     welcomeDiscountEnabled: formData.get('welcomeDiscountEnabled') === 'true',
+    codEnabled: formData.get('codEnabled') === 'true',
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
@@ -93,6 +95,7 @@ export async function updateBusinessSettings(
       twitter_url: d.twitterUrl,
       welcome_discount_percent: d.welcomeDiscountPercent,
       welcome_discount_enabled: d.welcomeDiscountEnabled,
+      cod_enabled: d.codEnabled,
       updated_at: new Date().toISOString(),
     })
     .eq('vendor_id', admin.vendor_id);
