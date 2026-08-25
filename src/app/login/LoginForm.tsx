@@ -7,10 +7,13 @@ import { login } from './actions';
 export function LoginForm() {
   const [state, formAction, pending] = useActionState(login, undefined);
   const searchParams = useSearchParams();
+  const errorParam = searchParams.get('error');
   const queryError =
-    searchParams.get('error') === 'not_admin'
+    errorParam === 'not_admin'
       ? "That account doesn't have admin access. Sign in with an admin account instead."
-      : null;
+      : errorParam === 'vendor_inactive'
+        ? 'This store is suspended. Contact Nashemann support to reactivate it.'
+        : null;
 
   return (
     <form action={formAction} className="space-y-4">

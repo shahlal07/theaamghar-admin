@@ -50,10 +50,15 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Only auto-redirect a signed-in user away from /login when they landed
+  // there with no error -- any error param (not_admin, vendor_inactive, ...)
+  // means dal.ts's getAdminUser() deliberately sent them back here to show
+  // that specific message, and bouncing them to /admin just re-triggers the
+  // same failing check there, landing on a blank page instead of the error.
   if (
     user &&
     request.nextUrl.pathname === '/login' &&
-    request.nextUrl.searchParams.get('error') !== 'not_admin'
+    !request.nextUrl.searchParams.get('error')
   ) {
     const url = request.nextUrl.clone();
     url.pathname = '/admin';
