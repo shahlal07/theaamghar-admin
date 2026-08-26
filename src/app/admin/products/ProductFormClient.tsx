@@ -11,6 +11,7 @@ import {
   type CategorySchema,
 } from '@/lib/product-types';
 import { createProduct, updateProduct, uploadProductImages, deleteProductImage } from './actions';
+import { getAddonGroups, slugifyAddonId, type AddonGroup } from '@/lib/product-addons';
 
 function slugify(input: string): string {
   return input
@@ -48,6 +49,7 @@ function nextKey() {
 
 type BoxSizeRow = ProductBoxSizeInput & { key: string };
 type VariantRow = ProductVariantInput & { key: string };
+type AddonGroupRow = AddonGroup & { key: string };
 
 export function ProductFormClient({
   product,
@@ -140,6 +142,9 @@ export function ProductFormClient({
   );
   const [variants, setVariants] = useState<VariantRow[]>(
     (product?.variants ?? []).map((v) => ({ ...v, key: v.id ?? nextKey() }))
+  );
+  const [addonGroups, setAddonGroups] = useState<AddonGroupRow[]>(
+    getAddonGroups(product?.attributes).map((g) => ({ ...g, key: nextKey() }))
   );
 
   const action = isEdit ? updateProduct : createProduct;
@@ -258,6 +263,119 @@ export function ProductFormClient({
     setVariants((rows) => rows.filter((r) => r.key !== key));
   }
 
+  function addAddonGroup() {
+    setAddonGroups((rows) => [
+      ...rows,
+      { key: nextKey(), id: nextKey(), name: '', options: [], pricingTiers: [] },
+    ]);
+  }
+
+  function removeAddonGroup(key: string) {
+    setAddonGroups((rows) => rows.filter((r) => r.key !== key));
+  }
+
+  function updateAddonGroupName(key: string, name: string) {
+    setAddonGroups((rows) =>
+      rows.map((r) => (r.key === key ? { ...r, name, id: r.id.startsWith('new-') ? slugifyAddonId(name) || r.id : r.id } : r))
+    );
+  }
+
+  function addAddonOption(key: string) {
+    setAddonGroups((rows) =>
+      rows.map((r) =>
+        r.key === key ? { ...r, options: [...r.options, { id: nextKey(), label: '' }] } : r
+      )
+    );
+  }
+
+  function updateAddonOption(key: string, optionIndex: number, label: string) {
+    setAddonGroups((rows) =>
+      rows.map((r) =>
+        r.key === key
+          ? {
+              ...r,
+              options: r.options.map((o, i) =>
+                i === optionIndex ? { ...o, id: o.id.startsWith('new-') ? slugifyAddonId(label) || o.id : o.id, label } : o
+              ),
+            }
+          : r
+      )
+    );
+  }
+
+  function updateAddonOptionImage(key: string, optionIndex: number, image: string | undefined) {
+    setAddonGroups((rows) =>
+      rows.map((r) =>
+        r.key === key
+          ? { ...r, options: r.options.map((o, i) => (i === optionIndex ? { ...o, image } : o)) }
+          : r
+      )
+    );
+  }
+
+  const [uploadingAddonImage, setUploadingAddonImage] = useState<string | null>(null);
+
+  async function handleAddonOptionImageUpload(
+    key: string,
+    optionIndex: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const uploadKey = `${key}:${optionIndex}`;
+    setUploadingAddonImage(uploadKey);
+    const fd = new FormData();
+    fd.append('files', file);
+    // uploadProductImages's folder param strips anything but a-z0-9- (see
+    // actions.ts), so a "/" here would just get silently deleted rather
+    // than nesting into a subfolder -- hyphenate instead.
+    fd.set('folder', `${slug || 'misc'}-addons`);
+
+    const result = await uploadProductImages(undefined, fd);
+    setUploadingAddonImage(null);
+
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    const url = result?.urls?.[0];
+    if (url) updateAddonOptionImage(key, optionIndex, url);
+  }
+
+  function removeAddonOption(key: string, optionIndex: number) {
+    setAddonGroups((rows) =>
+      rows.map((r) => (r.key === key ? { ...r, options: r.options.filter((_, i) => i !== optionIndex) } : r))
+    );
+  }
+
+  function addPricingTier(key: string) {
+    setAddonGroups((rows) =>
+      rows.map((r) =>
+        r.key === key ? { ...r, pricingTiers: [...r.pricingTiers, { count: r.pricingTiers.length + 1, price: 0 }] } : r
+      )
+    );
+  }
+
+  function updatePricingTier(key: string, tierIndex: number, field: 'count' | 'price', value: number) {
+    setAddonGroups((rows) =>
+      rows.map((r) =>
+        r.key === key
+          ? { ...r, pricingTiers: r.pricingTiers.map((t, i) => (i === tierIndex ? { ...t, [field]: value } : t)) }
+          : r
+      )
+    );
+  }
+
+  function removePricingTier(key: string, tierIndex: number) {
+    setAddonGroups((rows) =>
+      rows.map((r) =>
+        r.key === key ? { ...r, pricingTiers: r.pricingTiers.filter((_, i) => i !== tierIndex) } : r
+      )
+    );
+  }
+
   return (
     <form
       action={(fd) => {
@@ -267,6 +385,20 @@ export function ProductFormClient({
         fd.set('categoryId', categoryId);
         fd.set('unitCost', String(unitCost));
         fd.set('attributesJson', JSON.stringify(attrs));
+        fd.set(
+          'addonGroupsJson',
+          JSON.stringify(
+            addonGroups
+              .filter((g) => g.name.trim() && g.options.some((o) => o.label.trim()))
+              .map((g) => ({
+                id: g.id,
+                name: g.name,
+                options: g.options.filter((o) => o.label.trim()),
+                pricingTiers: g.pricingTiers,
+                ...(g.note ? { note: g.note } : {}),
+              }))
+          )
+        );
         fd.set('tagline', tagline);
         fd.set(
           'descriptionJson',
@@ -850,6 +982,157 @@ export function ProductFormClient({
           </div>
         </div>
       )}
+
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--text)]">Add-ons</h2>
+            <p className="text-xs text-[var(--text-light)]">
+              Optional extras customers can pick on the product page (e.g. Gift Wrap, Ice Pack).
+              Priced by how many they select, not per item.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={addAddonGroup}
+            className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)]"
+          >
+            + Add Group
+          </button>
+        </div>
+        {addonGroups.length === 0 ? (
+          <p className="text-sm text-[var(--text-light)]">No add-ons yet — this product sells as-is.</p>
+        ) : (
+          <div className="space-y-4">
+            {addonGroups.map((g) => (
+              <div key={g.key} className="rounded-xl border border-[var(--border-subtle)] p-4">
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <Field label="Group name (e.g. Extras)">
+                    <input
+                      className={inputClass}
+                      value={g.name}
+                      onChange={(e) => updateAddonGroupName(g.key, e.target.value)}
+                      placeholder="Extras"
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    onClick={() => removeAddonGroup(g.key)}
+                    className="h-fit rounded-lg border border-[var(--error)] px-3 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                  >
+                    Remove group
+                  </button>
+                </div>
+
+                <div className="mb-3">
+                  <label className="mb-1 block text-xs font-medium text-[var(--text-light)] uppercase tracking-wide">
+                    Options
+                  </label>
+                  <div className="space-y-2">
+                    {g.options.map((o, i) => {
+                      const uploadKey = `${g.key}:${i}`;
+                      const isUploading = uploadingAddonImage === uploadKey;
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          {o.image ? (
+                            <div className="group relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-[var(--border-subtle)]">
+                              <Image src={o.image} alt="" fill sizes="36px" unoptimized className="object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => updateAddonOptionImage(g.key, i, undefined)}
+                                className="absolute inset-0 flex items-center justify-center bg-black/0 text-[9px] font-semibold text-white opacity-0 transition group-hover:bg-black/50 group-hover:opacity-100"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] text-[9px] text-[var(--text-light)] hover:border-[var(--mango-orange)]">
+                              {isUploading ? '…' : 'Photo'}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="sr-only"
+                                disabled={isUploading}
+                                onChange={(e) => handleAddonOptionImageUpload(g.key, i, e)}
+                              />
+                            </label>
+                          )}
+                          <input
+                            className={inputClass}
+                            value={o.label}
+                            onChange={(e) => updateAddonOption(g.key, i, e.target.value)}
+                            placeholder="Gift Wrap"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeAddonOption(g.key, i)}
+                            className="shrink-0 rounded-lg border border-[var(--error)] px-3 py-2 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addAddonOption(g.key)}
+                    className="mt-2 rounded-lg border border-[var(--border-subtle)] px-3 py-1 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)]"
+                  >
+                    + Add Option
+                  </button>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[var(--text-light)] uppercase tracking-wide">
+                    Pricing tiers (price for exactly N selected — leave empty for free add-ons)
+                  </label>
+                  <div className="space-y-2">
+                    {g.pricingTiers.map((t, i) => (
+                      <div key={i} className="flex items-end gap-2">
+                        <Field label="Count">
+                          <input
+                            type="number"
+                            min={1}
+                            step="1"
+                            className={inputClass}
+                            value={t.count}
+                            onChange={(e) => updatePricingTier(g.key, i, 'count', parseInt(e.target.value, 10) || 1)}
+                          />
+                        </Field>
+                        <Field label="Price (Rs)">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            className={inputClass}
+                            value={t.price}
+                            onChange={(e) => updatePricingTier(g.key, i, 'price', parseFloat(e.target.value) || 0)}
+                          />
+                        </Field>
+                        <button
+                          type="button"
+                          onClick={() => removePricingTier(g.key, i)}
+                          className="h-fit rounded-lg border border-[var(--error)] px-3 py-2 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addPricingTier(g.key)}
+                    className="mt-2 rounded-lg border border-[var(--border-subtle)] px-3 py-1 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)]"
+                  >
+                    + Add Tier
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <button
         type="submit"

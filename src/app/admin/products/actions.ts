@@ -14,6 +14,7 @@ import {
   type CategorySchema,
 } from '@/lib/product-types';
 import { getCategorySchema } from '@/lib/category-schema.server';
+import { type AddonGroup } from '@/lib/product-addons';
 
 export type ActionState = { error?: string; success?: boolean } | undefined;
 export type UploadState = { error?: string; urls?: string[] } | undefined;
@@ -25,6 +26,14 @@ const BoxSizeSchema = z.object({
   stock_qty: z.number().int().min(0),
   low_stock_threshold: z.number().int().min(0),
   active: z.boolean(),
+});
+
+const AddonGroupSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  options: z.array(z.object({ id: z.string().min(1), label: z.string().min(1), image: z.string().optional() })).min(1),
+  pricingTiers: z.array(z.object({ count: z.number().int().positive(), price: z.number().min(0) })),
+  note: z.string().optional(),
 });
 
 const VariantSchema = z.object({
@@ -72,6 +81,7 @@ const ProductSchema = z.object({
   // built entirely by this form's own dynamic-field UI (never hand-typed),
   // so a parse failure can safely fall back to {}.
   attributesJson: z.string(),
+  addonGroups: z.array(AddonGroupSchema),
 });
 
 function parseProductForm(formData: FormData) {
@@ -85,11 +95,13 @@ function parseProductForm(formData: FormData) {
   let variants: unknown[] = [];
   let description: string[] = [];
   let gallery: string[] = [];
+  let addonGroups: unknown[] = [];
   try {
     boxSizes = JSON.parse(String(raw.boxSizesJson || '[]'));
     variants = JSON.parse(String(raw.variantsJson || '[]'));
     description = JSON.parse(String(raw.descriptionJson || '[]'));
     gallery = JSON.parse(String(raw.galleryJson || '[]'));
+    addonGroups = JSON.parse(String(raw.addonGroupsJson || '[]'));
   } catch {
     // leave as empty arrays; zod validation below will still pass on []
   }
@@ -123,6 +135,7 @@ function parseProductForm(formData: FormData) {
     boxSizes,
     variants,
     attributesJson: String(raw.attributesJson ?? '{}'),
+    addonGroups,
   });
 }
 
@@ -194,6 +207,11 @@ export async function createProduct(
   const d = parsed.data;
   const model = schema.model;
   const { attributes, origin, season, sweetness, fiber } = splitAttributesForColumns(schema, rawAttributes ?? {});
+  // addon_groups isn't a category-schema field (it applies to any vendor/
+  // category alike, see product-addons.ts), so it's kept out of
+  // splitAttributesForColumns's schema-driven filtering and merged in here
+  // directly instead.
+  if (d.addonGroups.length > 0) attributes.addon_groups = d.addonGroups as AddonGroup[];
 
   const supabase = await createClient();
 
@@ -316,6 +334,7 @@ export async function updateProduct(
   const d = parsed.data;
   const model = schema.model;
   const { attributes, origin, season, sweetness, fiber } = splitAttributesForColumns(schema, rawAttributes ?? {});
+  if (d.addonGroups.length > 0) attributes.addon_groups = d.addonGroups as AddonGroup[];
 
   // Retyping a product with real stock/order history is a correctness
   // hazard (the stock triggers key off which table -- box_sizes/variants/

@@ -66,9 +66,14 @@ export async function savePaymentAccount(
     if (error) return { error: `Failed to save: ${error.message}` };
     await logAdminAction(admin, 'update', 'payment_account', d.id, { method: d.method });
   } else {
+    // vendor_id has no DB default and the insert RLS policy requires it to
+    // equal the caller's own vendor -- omitting it here made "+ Add
+    // account" fail outright for every vendor (real bug, found live: it
+    // errored with an RLS violation the first time this form was actually
+    // submitted through the UI rather than seeded via SQL).
     const { data, error } = await supabase
       .from('payment_accounts')
-      .insert(row)
+      .insert({ ...row, vendor_id: admin.vendor_id })
       .select('id')
       .single();
     if (error) return { error: `Failed to create: ${error.message}` };

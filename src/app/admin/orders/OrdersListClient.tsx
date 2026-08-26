@@ -8,7 +8,13 @@ import Link from 'next/link';
 import { formatPKR } from '@/lib/format';
 import { ORDER_STATUSES } from '@/lib/order-status';
 import type { OrderListItem } from '@/lib/queries/orders';
+import { PAYMENT_METHOD_LABELS } from '@/lib/payment-methods';
 import { bulkUpdateOrderStatus } from './actions';
+
+// PAYMENT_METHOD_LABELS only covers the manual-transfer methods (it's
+// shared with the payment-accounts settings UI, which never deals with
+// COD) -- 'cod' is added here rather than there.
+const ORDER_PAYMENT_METHOD_LABELS: Record<string, string> = { cod: 'Cash on Delivery', ...PAYMENT_METHOD_LABELS };
 
 const STATUS_CLASS: Record<string, string> = {
   pending: 'bg-[var(--surface-sunken)] text-[var(--text-light)]',
@@ -171,7 +177,9 @@ export function OrdersListClient({
                   <td className="py-3 pr-4 text-[var(--text-light)]">{o.customer_name}</td>
                   <td className="py-3 pr-4 text-[var(--text)]">{formatPKR(o.total)}</td>
                   <td className="py-3 pr-4 text-[var(--text-light)]">
-                    {o.payment_status ?? '—'}
+                    {o.payment_method
+                      ? (ORDER_PAYMENT_METHOD_LABELS[o.payment_method] ?? o.payment_method)
+                      : '—'}
                   </td>
                   <td className="py-3 pr-4">
                     <span
