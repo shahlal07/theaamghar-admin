@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useActionState } from 'react';
 import { toast } from 'sonner';
-import type { InventoryUnit, AuditLogEntry, StockState } from '@/lib/queries/inventory';
+import type { InventoryUnit, AuditLogEntry, StockState, SizeBreakdownRow } from '@/lib/queries/inventory';
 import { adjustStock, updateThreshold } from './actions';
 
 const STATE_LABEL: Record<StockState, string> = {
@@ -209,15 +209,65 @@ function AuditLogTable({ entries }: { entries: AuditLogEntry[] }) {
   );
 }
 
+function SizeBreakdownTable({ rows }: { rows: SizeBreakdownRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-[var(--text-light)]">
+        No variants have a &quot;Size&quot; attribute yet — add one on a product&apos;s variants
+        (Product Management → edit a product → Variants) to see stock broken down by size here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-[var(--border-subtle)] text-xs uppercase tracking-wide text-[var(--text-light)]">
+            <th className="py-2 pr-4">Size</th>
+            <th className="py-2 pr-4">Products</th>
+            <th className="py-2 pr-4">Active Variants</th>
+            <th className="py-2">Total Stock</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.size} className="border-b border-[var(--border-subtle)] last:border-b-0">
+              <td className="py-2 pr-4 font-semibold text-[var(--text)]">{r.size}</td>
+              <td className="py-2 pr-4 text-[var(--text)]">{r.productCount}</td>
+              <td className="py-2 pr-4 text-[var(--text)]">{r.activeVariantCount}</td>
+              <td
+                className={`py-2 font-medium ${r.totalStock === 0 ? 'text-[var(--error)]' : 'text-[var(--text)]'}`}
+              >
+                {r.totalStock}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function InventoryClient({
   units,
   auditLog,
+  sizeBreakdown,
 }: {
   units: InventoryUnit[];
   auditLog: AuditLogEntry[];
+  sizeBreakdown: SizeBreakdownRow[];
 }) {
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-2 text-lg font-bold text-[var(--text)]">Stock by Size</h2>
+        <p className="mb-3 text-xs text-[var(--text-light)]">
+          How many products and how much total stock exists for each size across your catalog.
+        </p>
+        <SizeBreakdownTable rows={sizeBreakdown} />
+      </div>
+
       <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
         <h2 className="mb-2 text-lg font-bold text-[var(--text)]">Stock Levels</h2>
         {units.length === 0 ? (

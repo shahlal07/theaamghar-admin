@@ -4,7 +4,7 @@ import { InventoryClient } from './InventoryClient';
 export const dynamic = 'force-dynamic';
 
 export default async function InventoryPage() {
-  const { units, auditLog } = await getInventoryData();
+  const { units, auditLog, sizeBreakdown } = await getInventoryData();
 
   return (
     <div>
@@ -14,7 +14,7 @@ export default async function InventoryPage() {
         restored automatically if it&apos;s cancelled or refunded. Use manual
         adjustments for restocks, damage, or corrections.
       </p>
-      <InventoryClient units={units} auditLog={auditLog} />
+      <InventoryClient units={units} auditLog={auditLog} sizeBreakdown={sizeBreakdown} />
     </div>
   );
 }

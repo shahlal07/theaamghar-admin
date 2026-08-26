@@ -48,7 +48,12 @@ function nextKey() {
 }
 
 type BoxSizeRow = ProductBoxSizeInput & { key: string };
-type VariantRow = ProductVariantInput & { key: string };
+// attrRows replaces `attributes` (a Record<string,string>) during editing --
+// a plain object can't represent an in-progress empty/duplicate key while
+// the admin is still typing it, so each attribute pair gets its own stable
+// row key instead. Converted back into a Record at submit time.
+type AttrRow = { rowKey: string; attrKey: string; attrValue: string };
+type VariantRow = Omit<ProductVariantInput, 'attributes'> & { key: string; attrRows: AttrRow[] };
 type AddonGroupRow = AddonGroup & { key: string };
 
 export function ProductFormClient({
@@ -144,7 +149,15 @@ export function ProductFormClient({
     (product?.box_sizes ?? []).map((b) => ({ ...b, key: b.id ?? nextKey() }))
   );
   const [variants, setVariants] = useState<VariantRow[]>(
-    (product?.variants ?? []).map((v) => ({ ...v, key: v.id ?? nextKey() }))
+    (product?.variants ?? []).map(({ attributes, ...v }) => ({
+      ...v,
+      key: v.id ?? nextKey(),
+      attrRows: Object.entries(attributes ?? {}).map(([attrKey, attrValue]) => ({
+        rowKey: nextKey(),
+        attrKey,
+        attrValue,
+      })),
+    }))
   );
   const [addonGroups, setAddonGroups] = useState<AddonGroupRow[]>(
     getAddonGroups(product?.attributes).map((g) => ({ ...g, key: nextKey() }))
@@ -286,7 +299,7 @@ export function ProductFormClient({
       {
         key: nextKey(),
         id: null,
-        attributes: {},
+        attrRows: [{ rowKey: nextKey(), attrKey: '', attrValue: '' }],
         label: '',
         selling_price: 0,
         stock_qty: 0,
@@ -296,12 +309,47 @@ export function ProductFormClient({
     ]);
   }
 
-  function updateVariantField<K extends keyof ProductVariantInput>(
+  function updateVariantField<K extends keyof Omit<ProductVariantInput, 'attributes'>>(
     key: string,
     field: K,
-    value: ProductVariantInput[K]
+    value: Omit<ProductVariantInput, 'attributes'>[K]
   ) {
     setVariants((rows) => rows.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+  }
+
+  function addVariantAttr(variantKey: string) {
+    setVariants((rows) =>
+      rows.map((r) =>
+        r.key === variantKey
+          ? { ...r, attrRows: [...r.attrRows, { rowKey: nextKey(), attrKey: '', attrValue: '' }] }
+          : r
+      )
+    );
+  }
+
+  function updateVariantAttr(variantKey: string, rowKey: string, field: 'attrKey' | 'attrValue', value: string) {
+    setVariants((rows) =>
+      rows.map((r) =>
+        r.key === variantKey
+          ? { ...r, attrRows: r.attrRows.map((a) => (a.rowKey === rowKey ? { ...a, [field]: value } : a)) }
+          : r
+      )
+    );
+  }
+
+  function removeVariantAttr(variantKey: string, rowKey: string) {
+    setVariants((rows) =>
+      rows.map((r) => (r.key === variantKey ? { ...r, attrRows: r.attrRows.filter((a) => a.rowKey !== rowKey) } : r))
+    );
+  }
+
+  // Mirrors src/lib/variant-label.ts on the storefront (label override, else
+  // join non-empty attribute values with " / ") so the admin sees exactly
+  // what customers will see as they build the attribute list.
+  function previewVariantLabel(v: VariantRow): string {
+    if (v.label) return v.label;
+    const values = v.attrRows.map((a) => a.attrValue.trim()).filter(Boolean);
+    return values.length > 0 ? values.join(' / ') : 'Standard';
   }
 
   function removeVariant(key: string) {
@@ -495,7 +543,9 @@ export function ProductFormClient({
             model === 'variant_based'
               ? variants.map((v) => ({
                   id: v.id,
-                  attributes: v.attributes,
+                  attributes: Object.fromEntries(
+                    v.attrRows.filter((a) => a.attrKey.trim()).map((a) => [a.attrKey.trim(), a.attrValue.trim()])
+                  ),
                   label: v.label,
                   selling_price: v.selling_price,
                   stock_qty: v.stock_qty,
@@ -951,75 +1001,117 @@ export function ProductFormClient({
               No variants yet — add at least one so this product can be sold.
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {variants.map((v) => (
-                <div
-                  key={v.key}
-                  className="grid grid-cols-2 gap-3 border-b border-[var(--border-subtle)] pb-3 last:border-b-0 sm:grid-cols-6 sm:items-end"
-                >
-                  <Field label="Variant (e.g. M / Blue)">
-                    <input
-                      className={inputClass}
-                      value={v.label ?? ''}
-                      onChange={(e) => updateVariantField(v.key, 'label', e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Selling price">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className={inputClass}
-                      value={v.selling_price}
-                      onChange={(e) =>
-                        updateVariantField(v.key, 'selling_price', parseFloat(e.target.value) || 0)
-                      }
-                    />
-                  </Field>
-                  <Field label="Stock qty">
-                    <input
-                      type="number"
-                      min={0}
-                      step="1"
-                      className={inputClass}
-                      value={v.stock_qty}
-                      onChange={(e) =>
-                        updateVariantField(v.key, 'stock_qty', parseInt(e.target.value, 10) || 0)
-                      }
-                    />
-                  </Field>
-                  <Field label="Low-stock threshold">
-                    <input
-                      type="number"
-                      min={0}
-                      step="1"
-                      className={inputClass}
-                      value={v.low_stock_threshold}
-                      onChange={(e) =>
-                        updateVariantField(
-                          v.key,
-                          'low_stock_threshold',
-                          parseInt(e.target.value, 10) || 0
-                        )
-                      }
-                    />
-                  </Field>
-                  <label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]">
-                    <input
-                      type="checkbox"
-                      checked={v.active}
-                      onChange={(e) => updateVariantField(v.key, 'active', e.target.checked)}
-                      className="h-4 w-4 accent-[var(--mango-orange)]"
-                    />
-                    Active
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removeVariant(v.key)}
-                    className="h-fit rounded-lg border border-[var(--error)] px-3 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
-                  >
-                    Remove
-                  </button>
+                <div key={v.key} className="border-b border-[var(--border-subtle)] pb-4 last:border-b-0">
+                  <div className="mb-3">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-xs font-medium uppercase tracking-wide text-[var(--text-light)]">
+                        Attributes (e.g. Size: L, Set: Full Tracksuit)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => addVariantAttr(v.key)}
+                        className="text-xs font-semibold text-[var(--mango-orange)]"
+                      >
+                        + Add attribute
+                      </button>
+                    </div>
+                    {v.attrRows.length === 0 ? (
+                      <p className="text-xs text-[var(--text-light)]">
+                        No attributes -- customers will just see &quot;Standard&quot;. Add one, e.g. Size.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {v.attrRows.map((a) => (
+                          <div key={a.rowKey} className="flex items-center gap-2">
+                            <input
+                              placeholder="Size"
+                              className={`${inputClass} max-w-[140px]`}
+                              value={a.attrKey}
+                              onChange={(e) => updateVariantAttr(v.key, a.rowKey, 'attrKey', e.target.value)}
+                            />
+                            <input
+                              placeholder="L"
+                              className={inputClass}
+                              value={a.attrValue}
+                              onChange={(e) => updateVariantAttr(v.key, a.rowKey, 'attrValue', e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeVariantAttr(v.key, a.rowKey)}
+                              aria-label="Remove attribute"
+                              className="shrink-0 rounded-lg border border-[var(--border-subtle)] px-2.5 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-1.5 text-xs text-[var(--text-light)]">
+                      Shown to customers as: <strong>{previewVariantLabel(v)}</strong>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:items-end">
+                    <Field label="Selling price">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className={inputClass}
+                        value={v.selling_price}
+                        onChange={(e) =>
+                          updateVariantField(v.key, 'selling_price', parseFloat(e.target.value) || 0)
+                        }
+                      />
+                    </Field>
+                    <Field label="Stock qty">
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        className={inputClass}
+                        value={v.stock_qty}
+                        onChange={(e) =>
+                          updateVariantField(v.key, 'stock_qty', parseInt(e.target.value, 10) || 0)
+                        }
+                      />
+                    </Field>
+                    <Field label="Low-stock threshold">
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        className={inputClass}
+                        value={v.low_stock_threshold}
+                        onChange={(e) =>
+                          updateVariantField(
+                            v.key,
+                            'low_stock_threshold',
+                            parseInt(e.target.value, 10) || 0
+                          )
+                        }
+                      />
+                    </Field>
+                    <label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]">
+                      <input
+                        type="checkbox"
+                        checked={v.active}
+                        onChange={(e) => updateVariantField(v.key, 'active', e.target.checked)}
+                        className="h-4 w-4 accent-[var(--mango-orange)]"
+                      />
+                      Active
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeVariant(v.key)}
+                      className="h-fit rounded-lg border border-[var(--error)] px-3 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--error)]/10"
+                    >
+                      Remove Variant
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

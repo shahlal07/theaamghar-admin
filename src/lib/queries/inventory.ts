@@ -44,9 +44,29 @@ function variantLabel(attributes: Record<string, unknown>, label: string | null)
   return values.length > 0 ? values.join(' / ') : 'Standard';
 }
 
+export type SizeBreakdownRow = {
+  size: string;
+  productCount: number;
+  activeVariantCount: number;
+  totalStock: number;
+};
+
+// Matches the variant attribute key an admin uses for size, whatever case
+// they typed it in (the "Size" attribute editor on the product form writes
+// it as typed, not normalized) -- "Size", "size", "SIZE" all count.
+const SIZE_KEY_PATTERN = /^size$/i;
+
+function extractSizeValue(attributes: Record<string, unknown>): string | null {
+  for (const [key, value] of Object.entries(attributes)) {
+    if (SIZE_KEY_PATTERN.test(key) && typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 export async function getInventoryData(): Promise<{
   units: InventoryUnit[];
   auditLog: AuditLogEntry[];
+  sizeBreakdown: SizeBreakdownRow[];
 }> {
   const supabase = await createClient();
   const admin = await getAdminUser();
@@ -192,8 +212,34 @@ export async function getInventoryData(): Promise<{
       state: getStockState(p.stock_qty as number, p.low_stock_threshold),
     }));
 
+  // "How many products/how much stock exists per size" -- grouped from the
+  // same variant rows already fetched above, active variants only (a
+  // disabled size variant isn't really "available"). One product can
+  // contribute to multiple sizes, so productCount counts distinct
+  // product_id per size, not variant rows.
+  const bySize = new Map<string, { productIds: Set<string>; activeVariantCount: number; totalStock: number }>();
+  for (const v of (variants ?? []) as VariantRow[]) {
+    if (!v.active) continue;
+    const size = extractSizeValue(v.attributes ?? {});
+    if (!size) continue;
+    const entry = bySize.get(size) ?? { productIds: new Set(), activeVariantCount: 0, totalStock: 0 };
+    entry.productIds.add(v.product_id);
+    entry.activeVariantCount += 1;
+    entry.totalStock += v.stock_qty;
+    bySize.set(size, entry);
+  }
+  const sizeBreakdown: SizeBreakdownRow[] = [...bySize.entries()]
+    .map(([size, e]) => ({
+      size,
+      productCount: e.productIds.size,
+      activeVariantCount: e.activeVariantCount,
+      totalStock: e.totalStock,
+    }))
+    .sort((a, b) => b.totalStock - a.totalStock);
+
   return {
     units: [...boxUnits, ...variantUnits, ...simpleUnits],
+    sizeBreakdown,
     auditLog: ((auditLog ?? []) as AuditRow[]).map((a) => {
       const box = oneOrNull(a.product_box_sizes);
       const variant = oneOrNull(a.product_variants);

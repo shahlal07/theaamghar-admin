@@ -42,6 +42,16 @@ export function normalizeProductModel(productType: string | null | undefined): C
 // concept so it isn't rendered twice.
 const BOX_SIZE_FIELD_PATTERN = /\bbox size\b|\bweight\s*\/|\bbundle size\b/i;
 
+// Size/Color are the two fields every variant_based category schema uses to
+// describe its actual variant dimensions (Clothing's "S / M / L / XL x 4
+// colors", Beverages' "Small / Medium / Large") -- rendering them as a
+// second, product-level free-text box in addition to the real per-variant
+// Size/Color attribute editor on the Variants section would just be a
+// confusing duplicate of the same concept. Everything else in a
+// variant_based schema's field list (Fabric, Fit, Care instructions, Drink
+// type, ...) stays a real product-level descriptive field.
+const VARIANT_DIMENSION_FIELD_PATTERN = /^size$|^colou?r$/i;
+
 // The schema only lists field *labels*, not machine keys (it's a shared,
 // display-oriented table also read by the superadmin panel) -- derive a
 // stable snake_case jsonb key from each label so the same field always
@@ -67,6 +77,7 @@ export function fieldKey(label: string): string {
 export function productLevelFields(schema: CategorySchema): { key: string; label: string }[] {
   return schema.fields
     .filter((label) => schema.model !== 'weight_based' || !BOX_SIZE_FIELD_PATTERN.test(label))
+    .filter((label) => schema.model !== 'variant_based' || !VARIANT_DIMENSION_FIELD_PATTERN.test(label))
     .map((label) => ({ key: fieldKey(label), label }));
 }
 
