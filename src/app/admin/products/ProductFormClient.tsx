@@ -10,7 +10,7 @@ import {
   productLevelFields,
   type CategorySchema,
 } from '@/lib/product-types';
-import { createProduct, updateProduct, uploadProductImages, deleteProductImage } from './actions';
+import { createProduct, updateProduct, uploadProductImages, deleteProductImage, uploadProductVideo, deleteProductVideo } from './actions';
 import { getAddonGroups, slugifyAddonId, type AddonGroup } from '@/lib/product-addons';
 
 function slugify(input: string): string {
@@ -136,6 +136,9 @@ export function ProductFormClient({
   const [gallery, setGallery] = useState<string[]>(product?.gallery ?? []);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(product?.video_url ?? null);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const [boxSizes, setBoxSizes] = useState<BoxSizeRow[]>(
     (product?.box_sizes ?? []).map((b) => ({ ...b, key: b.id ?? nextKey() }))
@@ -200,6 +203,48 @@ export function ProductFormClient({
     } else {
       setGallery((g) => g.filter((x) => x !== url));
     }
+  }
+
+  async function handleVideoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingVideo(true);
+    const fd = new FormData();
+    fd.set('file', file);
+    fd.set('folder', slug || 'misc');
+
+    const result = await uploadProductVideo(undefined, fd);
+    setUploadingVideo(false);
+    if (videoInputRef.current) videoInputRef.current.value = '';
+
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    const previous = videoUrl;
+    const url = result?.urls?.[0];
+    if (url) {
+      setVideoUrl(url);
+      toast.success('Video uploaded');
+      if (previous) {
+        const dfd = new FormData();
+        dfd.set('url', previous);
+        deleteProductVideo(undefined, dfd);
+      }
+    }
+  }
+
+  async function handleRemoveVideo() {
+    if (!videoUrl) return;
+    const fd = new FormData();
+    fd.set('url', videoUrl);
+    const result = await deleteProductVideo(undefined, fd);
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    setVideoUrl(null);
   }
 
   function setPrimaryImage(url: string) {
@@ -413,6 +458,7 @@ export function ProductFormClient({
         fd.set('weightNote', weightNote);
         fd.set('image', image ?? '');
         fd.set('galleryJson', JSON.stringify(gallery.filter((g) => g !== image)));
+        fd.set('videoUrl', videoUrl ?? '');
         fd.set('status', status);
         fd.set('sortOrder', String(sortOrder));
         fd.set('purchasePricePerKg', String(purchasePricePerKg));
@@ -578,6 +624,11 @@ export function ProductFormClient({
 
       <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Images</h2>
+        <p className="mb-4 text-xs text-[var(--text-light)]">
+          Square photos work best — this same image is used on both the product grid and the mobile
+          product page. Recommended: <strong>1000×1000px</strong> (min 800×800px), JPG/PNG/WebP, under
+          5MB. The first image is the primary photo shown everywhere the product is listed.
+        </p>
         <div className="mb-4 flex flex-wrap gap-3">
           {allImages.map((url) => (
             <div
@@ -621,6 +672,37 @@ export function ProductFormClient({
           className="text-sm text-[var(--text)]"
         />
         {uploading && <p className="mt-2 text-xs text-[var(--text-light)]">Uploading…</p>}
+      </div>
+
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-[var(--text)]">Video (optional)</h2>
+        <p className="mb-4 text-xs text-[var(--text-light)]">
+          Shown as an extra tile next to the photos on the product page — customers tap it to play.
+          Recommended: <strong>portrait 1080×1920px (9:16)</strong>, works fine on both phone and
+          desktop. MP4 or WebM, under 30MB, keep it under 30 seconds so it loads quickly on mobile data.
+        </p>
+        {videoUrl ? (
+          <div className="mb-4 flex items-center gap-3">
+            <video src={videoUrl} controls className="h-32 w-20 rounded-lg border border-[var(--border-subtle)] object-cover" />
+            <button
+              type="button"
+              onClick={handleRemoveVideo}
+              className="rounded bg-[var(--surface-sunken)] px-3 py-1.5 text-xs font-medium text-[var(--error)]"
+            >
+              Remove video
+            </button>
+          </div>
+        ) : (
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/mp4,video/webm"
+            onChange={handleVideoChange}
+            disabled={uploadingVideo}
+            className="text-sm text-[var(--text)]"
+          />
+        )}
+        {uploadingVideo && <p className="mt-2 text-xs text-[var(--text-light)]">Uploading…</p>}
       </div>
 
       <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">

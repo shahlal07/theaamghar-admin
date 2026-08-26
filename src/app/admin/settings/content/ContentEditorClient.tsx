@@ -5,7 +5,7 @@ import { useActionState } from 'react';
 import Image from 'next/image';
 import { toast } from 'sonner';
 import type { SiteContent } from '@/lib/site-content-defaults';
-import { updateSiteContentSection, uploadSiteContentImage } from './actions';
+import { updateSiteContentSection, uploadSiteContentImage, uploadSiteContentVideo, clearSiteContentVideo } from './actions';
 
 const inputClass =
   'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-sunken)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--mango-orange)] focus:ring-2 focus:ring-[var(--mango-orange)]/20';
@@ -33,7 +33,7 @@ function Field({ label, hint, span2, children }: { label: string; hint?: string;
 // get a raw JSON textarea with try/catch validation on save rather than a
 // bespoke repeater UI -- not worth building for fields this rare.
 
-type FieldConfig = { key: string; label: string; type: 'text' | 'textarea' | 'newline-array' | 'json' | 'color' };
+type FieldConfig = { key: string; label: string; type: 'text' | 'textarea' | 'newline-array' | 'json' | 'color' | 'checkbox' };
 
 type SectionConfig =
   | { section: keyof SiteContent; title: string; description?: string; kind: 'fields'; fields: FieldConfig[] }
@@ -51,6 +51,8 @@ function sectionToEditState(config: SectionConfig, data: unknown): Record<string
       state[f.key] = Array.isArray(v) ? v.join('\n') : '';
     } else if (f.type === 'json') {
       state[f.key] = JSON.stringify(v ?? [], null, 2);
+    } else if (f.type === 'checkbox') {
+      state[f.key] = v === true ? 'true' : 'false';
     } else {
       state[f.key] = typeof v === 'string' ? v : '';
     }
@@ -85,6 +87,8 @@ function SectionCard({ config, data }: { config: SectionConfig; data: unknown })
       const raw = edit[f.key] ?? '';
       if (f.type === 'newline-array') {
         base[f.key] = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+      } else if (f.type === 'checkbox') {
+        base[f.key] = raw === 'true';
       } else if (f.type === 'json') {
         try {
           base[f.key] = JSON.parse(raw);
@@ -137,7 +141,17 @@ function SectionCard({ config, data }: { config: SectionConfig; data: unknown })
                       : undefined
                 }
               >
-                {f.type === 'color' ? (
+                {f.type === 'checkbox' ? (
+                  <label className="flex items-center gap-2 text-sm text-[var(--text)]">
+                    <input
+                      type="checkbox"
+                      checked={edit[f.key] === 'true'}
+                      onChange={(e) => setEdit((s) => ({ ...s, [f.key]: e.target.checked ? 'true' : 'false' }))}
+                      className="h-4 w-4"
+                    />
+                    Enabled
+                  </label>
+                ) : f.type === 'color' ? (
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -190,19 +204,18 @@ function SectionCard({ config, data }: { config: SectionConfig; data: unknown })
 }
 
 // --- image fields --------------------------------------------------------
-// Only these 4 fields get real upload UI (per plan); every other URL-shaped
-// field (video URLs) stays a plain text input above, since the storage
-// bucket only accepts jpeg/png/webp anyway.
 
-type ImageField = 'brandLogo' | 'brandFavicon' | 'heroMobile' | 'storyBannerMobile';
+type ImageField = 'brandLogo' | 'brandFavicon' | 'heroDesktop' | 'heroMobile' | 'storyBannerDesktop' | 'storyBannerMobile';
 
 function ImageFieldUploader({
   field,
   label,
+  hint,
   currentUrl,
 }: {
   field: ImageField;
   label: string;
+  hint?: string;
   currentUrl: string | null;
 }) {
   const [uploading, setUploading] = useState(false);
@@ -260,6 +273,102 @@ function ImageFieldUploader({
           />
         </label>
       </div>
+      {hint && <p className="mt-1.5 text-xs text-[var(--text-light)]">{hint}</p>}
+    </div>
+  );
+}
+
+// --- video fields ----------------------------------------------------------
+
+type VideoField = 'heroDesktopVideo' | 'heroMobileVideo' | 'storyBannerDesktopVideo' | 'storyBannerMobileVideo';
+
+function VideoFieldUploader({
+  field,
+  label,
+  hint,
+  currentUrl,
+}: {
+  field: VideoField;
+  label: string;
+  hint?: string;
+  currentUrl: string | null;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(currentUrl);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.set('field', field);
+    fd.set('file', file);
+    const result = await uploadSiteContentVideo(undefined, fd);
+    setUploading(false);
+    if (inputRef.current) inputRef.current.value = '';
+
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(`${label} updated`);
+    setPreviewUrl(URL.createObjectURL(file));
+  }
+
+  async function handleClear() {
+    setClearing(true);
+    const result = await clearSiteContentVideo(field);
+    setClearing(false);
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    setPreviewUrl(null);
+    toast.success(`${label} removed`);
+  }
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--text-light)]">
+        {label}
+      </label>
+      <div className="flex items-center gap-3">
+        {previewUrl ? (
+          <video
+            src={previewUrl}
+            muted
+            className="h-14 w-14 rounded-lg border border-[var(--border-subtle)] object-cover"
+          />
+        ) : (
+          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] text-[10px] text-[var(--text-light)]">
+            None
+          </div>
+        )}
+        <label className="cursor-pointer rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)]">
+          {uploading ? 'Uploading…' : previewUrl ? 'Replace' : 'Upload'}
+          <input
+            ref={inputRef}
+            type="file"
+            accept="video/mp4,video/webm"
+            className="hidden"
+            onChange={handleChange}
+            disabled={uploading}
+          />
+        </label>
+        {previewUrl && (
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={clearing}
+            className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs font-semibold text-[var(--error)] transition hover:bg-[var(--surface-sunken)] disabled:opacity-60"
+          >
+            {clearing ? 'Removing…' : 'Remove'}
+          </button>
+        )}
+      </div>
+      {hint && <p className="mt-1.5 text-xs text-[var(--text-light)]">{hint}</p>}
     </div>
   );
 }
@@ -301,8 +410,16 @@ const HERO_CONFIG: SectionConfig = {
     { key: 'subheadline', label: 'Subheadline', type: 'textarea' },
     { key: 'ctaPrimaryText', label: 'Primary button text', type: 'text' },
     { key: 'ctaSecondaryText', label: 'Secondary button text', type: 'text' },
-    { key: 'desktopVideoUrl', label: 'Desktop video URL', type: 'text' },
   ],
+};
+
+const HERO_MOBILE_ONLY_CONFIG: SectionConfig = {
+  section: 'hero',
+  title: 'Mobile Image Sizing',
+  description:
+    "Turn this on only if your mobile hero image/video is a small product photo, not a real wide hero shot -- desktop will show its own background instead of stretching it full-width.",
+  kind: 'fields',
+  fields: [{ key: 'mobileOnly', label: 'Never stretch the mobile image/video on desktop', type: 'checkbox' }],
 };
 
 const STORY_CONFIG: SectionConfig = {
@@ -344,8 +461,16 @@ const STORY_BANNER_CONFIG: SectionConfig = {
   fields: [
     { key: 'heading', label: 'Heading', type: 'text' },
     { key: 'body', label: 'Body', type: 'textarea' },
-    { key: 'videoUrl', label: 'Video URL', type: 'text' },
   ],
+};
+
+const STORY_BANNER_MOBILE_ONLY_CONFIG: SectionConfig = {
+  section: 'storyBanner',
+  title: 'Mobile Image Sizing',
+  description:
+    "Turn this on only if your mobile banner image/video is a small product photo -- desktop will show its own background instead of stretching it.",
+  kind: 'fields',
+  fields: [{ key: 'mobileOnly', label: 'Never stretch the mobile image/video on desktop', type: 'checkbox' }],
 };
 
 const DELIVERY_CONFIG: SectionConfig = {
@@ -492,8 +617,18 @@ export function ContentEditorClient({ content }: { content: SiteContent }) {
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
           <h3 className="mb-4 text-base font-bold text-[var(--text)]">Logo &amp; Favicon</h3>
           <div className="flex flex-wrap gap-6">
-            <ImageFieldUploader field="brandLogo" label="Logo image" currentUrl={content.brand.logoImageUrl} />
-            <ImageFieldUploader field="brandFavicon" label="Favicon" currentUrl={content.brand.faviconUrl} />
+            <ImageFieldUploader
+              field="brandLogo"
+              label="Logo image"
+              hint="Recommended: 400×400px, square, transparent PNG or WebP."
+              currentUrl={content.brand.logoImageUrl}
+            />
+            <ImageFieldUploader
+              field="brandFavicon"
+              label="Favicon"
+              hint="Recommended: 512×512px, square, PNG."
+              currentUrl={content.brand.faviconUrl}
+            />
           </div>
           <p className="mt-3 text-xs text-[var(--text-light)]">
             Leave both empty to keep the default decorative logo mark. JPG, PNG or WebP, up to 5MB.
@@ -506,22 +641,84 @@ export function ContentEditorClient({ content }: { content: SiteContent }) {
       <section className="space-y-4">
         <h2 className="text-xl font-bold text-[var(--text)]">Homepage</h2>
         <SectionCard config={HERO_CONFIG} data={content.hero} />
+
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-bold text-[var(--text)]">Hero Mobile Image</h3>
-          <ImageFieldUploader field="heroMobile" label="Mobile hero image" currentUrl={content.hero.mobileImageUrl} />
+          <h3 className="mb-1 text-base font-bold text-[var(--text)]">Hero Media</h3>
+          <p className="mb-4 text-xs text-[var(--text-light)]">
+            The full-width banner at the top of your homepage. Upload a picture, a video, or both --
+            a video plays automatically (muted) and takes priority over the picture on whichever
+            device it&apos;s set for. Desktop and mobile are sized differently, so upload each
+            separately for the sharpest result on both.
+          </p>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <ImageFieldUploader
+              field="heroDesktop"
+              label="Desktop picture"
+              hint="Recommended: 1920×1080px (landscape, 16:9), JPG/PNG/WebP, under 5MB."
+              currentUrl={content.hero.desktopImageUrl}
+            />
+            <ImageFieldUploader
+              field="heroMobile"
+              label="Mobile picture"
+              hint="Recommended: 1080×1920px (portrait, 9:16), JPG/PNG/WebP, under 5MB."
+              currentUrl={content.hero.mobileImageUrl}
+            />
+            <VideoFieldUploader
+              field="heroDesktopVideo"
+              label="Desktop video"
+              hint="Recommended: 1920×1080px landscape, MP4/WebM, under 30MB, 10-20s loop."
+              currentUrl={content.hero.desktopVideoUrl || null}
+            />
+            <VideoFieldUploader
+              field="heroMobileVideo"
+              label="Mobile video"
+              hint="Recommended: 1080×1920px portrait, MP4/WebM, under 30MB, 10-20s loop."
+              currentUrl={content.hero.mobileVideoUrl || null}
+            />
+          </div>
         </div>
+        <SectionCard config={HERO_MOBILE_ONLY_CONFIG} data={content.hero} />
+
         <SectionCard config={STORY_CONFIG} data={content.story} />
         <SectionCard config={TRUST_BAR_CONFIG} data={content.trustBar} />
         <SectionCard config={WHY_CHOOSE_US_CONFIG} data={content.whyChooseUs} />
         <SectionCard config={STORY_BANNER_CONFIG} data={content.storyBanner} />
+
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-bold text-[var(--text)]">Story Banner Mobile Image</h3>
-          <ImageFieldUploader
-            field="storyBannerMobile"
-            label="Mobile banner image"
-            currentUrl={content.storyBanner.mobileImageUrl}
-          />
+          <h3 className="mb-1 text-base font-bold text-[var(--text)]">Story Banner Media</h3>
+          <p className="mb-4 text-xs text-[var(--text-light)]">
+            The smaller "Our Quality Promise" panel further down the homepage. Same picture-or-video
+            rules as the hero above, sized for its own smaller portrait frame.
+          </p>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <ImageFieldUploader
+              field="storyBannerDesktop"
+              label="Desktop picture"
+              hint="Recommended: 1000×1250px (portrait, 4:5), JPG/PNG/WebP, under 5MB."
+              currentUrl={content.storyBanner.desktopImageUrl || null}
+            />
+            <ImageFieldUploader
+              field="storyBannerMobile"
+              label="Mobile picture"
+              hint="Recommended: 900×1125px (portrait, 4:5), JPG/PNG/WebP, under 5MB."
+              currentUrl={content.storyBanner.mobileImageUrl}
+            />
+            <VideoFieldUploader
+              field="storyBannerDesktopVideo"
+              label="Desktop video"
+              hint="Recommended: portrait 4:5, MP4/WebM, under 30MB, 10-20s loop."
+              currentUrl={content.storyBanner.videoUrl || null}
+            />
+            <VideoFieldUploader
+              field="storyBannerMobileVideo"
+              label="Mobile video"
+              hint="Recommended: portrait 4:5, MP4/WebM, under 30MB, 10-20s loop."
+              currentUrl={content.storyBanner.mobileVideoUrl || null}
+            />
+          </div>
         </div>
+        <SectionCard config={STORY_BANNER_MOBILE_ONLY_CONFIG} data={content.storyBanner} />
+
         <SectionCard config={DELIVERY_CONFIG} data={content.delivery} />
         <SectionCard config={NEWSLETTER_CONFIG} data={content.newsletter} />
         <SectionCard config={FEATURED_COLLECTION_CONFIG} data={content.featuredCollection} />

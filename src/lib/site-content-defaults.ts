@@ -34,6 +34,15 @@ export type SiteContent = {
     desktopVideoUrl: string;
     desktopImageUrl: string;
     mobileImageUrl: string;
+    // Portrait-cut video for mobile, opt-in -- desktopVideoUrl only ever
+    // plays on desktop on the storefront. See vendor-storefronts'
+    // site-content-defaults.ts (the source of truth this type mirrors) for
+    // the full rationale.
+    mobileVideoUrl?: string;
+    // Opt-in -- when true, desktop never falls back to mobileImageUrl even
+    // without a desktopImageUrl/video (the mobile asset is assumed too
+    // low-resolution to blow up full-bleed on a desktop hero).
+    mobileOnly?: boolean;
   };
   story: {
     eyebrow: string;
@@ -55,7 +64,10 @@ export type SiteContent = {
     heading: string;
     body: string;
     videoUrl: string;
+    desktopImageUrl?: string;
     mobileImageUrl: string;
+    mobileVideoUrl?: string;
+    mobileOnly?: boolean;
   };
   delivery: {
     eyebrow: string;

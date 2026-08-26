@@ -60,6 +60,7 @@ const ProductSchema = z.object({
   weightNote: z.string().nullable(),
   image: z.string().nullable(),
   gallery: z.array(z.string()),
+  videoUrl: z.string().nullable(),
   status: z.enum(['draft', 'published', 'archived']),
   sortOrder: z.number().int(),
   purchasePricePerKg: z.number().min(0),
@@ -117,6 +118,7 @@ function parseProductForm(formData: FormData) {
     weightNote: strOrNull(raw.weightNote),
     image: strOrNull(raw.image),
     gallery,
+    videoUrl: strOrNull(raw.videoUrl),
     status: raw.status,
     sortOrder: Number(raw.sortOrder || 0),
     purchasePricePerKg: Number(raw.purchasePricePerKg || 0),
@@ -235,6 +237,7 @@ export async function createProduct(
       weight_note: d.weightNote,
       image: d.image,
       gallery: d.gallery,
+      video_url: d.videoUrl,
       status: d.status,
       sort_order: d.sortOrder,
       purchase_price_per_kg: d.purchasePricePerKg,
@@ -389,6 +392,7 @@ export async function updateProduct(
       weight_note: d.weightNote,
       image: d.image,
       gallery: d.gallery,
+      video_url: d.videoUrl,
       status: d.status,
       sort_order: d.sortOrder,
       purchase_price_per_kg: d.purchasePricePerKg,
@@ -594,6 +598,58 @@ export async function uploadProductImages(
   }
 
   return { urls };
+}
+
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+
+// Single video per product, reusing the product-images bucket (public,
+// no mime restriction at the bucket level) rather than a dedicated bucket --
+// keeps the upload/delete/RLS path identical to the image one above.
+export async function uploadProductVideo(
+  _prev: UploadState,
+  formData: FormData
+): Promise<UploadState> {
+  const admin = await getAdminUser();
+
+  const folder = String(formData.get('folder') || 'misc').replace(/[^a-z0-9-]/gi, '');
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) return { error: 'No file selected.' };
+  if (!ALLOWED_VIDEO_TYPES.includes(file.type)) return { error: `Unsupported file type: ${file.type || 'unknown'}` };
+  if (file.size > MAX_VIDEO_BYTES) return { error: 'Video is larger than 30MB.' };
+
+  const supabase = await createClient();
+  const ext = file.type === 'video/webm' ? 'webm' : 'mp4';
+  const path = `${admin.vendor_id}/${folder}/${crypto.randomUUID()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('product-images')
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+
+  const { data: publicUrl } = supabase.storage.from('product-images').getPublicUrl(path);
+  return { urls: [publicUrl.publicUrl] };
+}
+
+export async function deleteProductVideo(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  await getAdminUser();
+
+  const parsed = DeleteImageSchema.safeParse({ url: formData.get('url') });
+  if (!parsed.success) return { error: 'Invalid video URL.' };
+
+  const marker = '/product-images/';
+  const idx = parsed.data.url.indexOf(marker);
+  if (idx === -1) return { error: 'Not a product-images URL.' };
+  const path = decodeURIComponent(parsed.data.url.slice(idx + marker.length));
+
+  const supabase = await createClient();
+  const { error } = await supabase.storage.from('product-images').remove([path]);
+
+  if (error) return { error: `Failed to delete video: ${error.message}` };
+  return { success: true };
 }
 
 const DeleteImageSchema = z.object({ url: z.url() });

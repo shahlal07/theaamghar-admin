@@ -94,7 +94,13 @@ export async function updateSiteContentSection(
   return { success: true };
 }
 
-type ImageField = 'brandLogo' | 'brandFavicon' | 'heroDesktop' | 'heroMobile' | 'storyBannerMobile';
+type ImageField =
+  | 'brandLogo'
+  | 'brandFavicon'
+  | 'heroDesktop'
+  | 'heroMobile'
+  | 'storyBannerDesktop'
+  | 'storyBannerMobile';
 
 const IMAGE_FIELD_CONFIG: Record<
   ImageField,
@@ -104,6 +110,7 @@ const IMAGE_FIELD_CONFIG: Record<
   brandFavicon: { section: 'brand', key: 'faviconUrl', basePath: 'brand-favicon' },
   heroDesktop: { section: 'hero', key: 'desktopImageUrl', basePath: 'hero-desktop' },
   heroMobile: { section: 'hero', key: 'mobileImageUrl', basePath: 'hero-mobile' },
+  storyBannerDesktop: { section: 'storyBanner', key: 'desktopImageUrl', basePath: 'story-banner-desktop' },
   storyBannerMobile: { section: 'storyBanner', key: 'mobileImageUrl', basePath: 'story-banner-mobile' },
 };
 
@@ -170,6 +177,108 @@ export async function uploadSiteContentImage(
   if (error) return { error: `Failed to save: ${error}` };
 
   await logAdminAction(admin, 'update', 'site_content', field);
+  revalidatePath('/admin/settings/content');
+  return { success: true };
+}
+
+type VideoField = 'heroDesktopVideo' | 'heroMobileVideo' | 'storyBannerDesktopVideo' | 'storyBannerMobileVideo';
+
+const VIDEO_FIELD_CONFIG: Record<
+  VideoField,
+  { section: keyof SiteContent; key: string; basePath: string }
+> = {
+  heroDesktopVideo: { section: 'hero', key: 'desktopVideoUrl', basePath: 'hero-desktop-video' },
+  heroMobileVideo: { section: 'hero', key: 'mobileVideoUrl', basePath: 'hero-mobile-video' },
+  storyBannerDesktopVideo: { section: 'storyBanner', key: 'videoUrl', basePath: 'story-banner-desktop-video' },
+  storyBannerMobileVideo: { section: 'storyBanner', key: 'mobileVideoUrl', basePath: 'story-banner-mobile-video' },
+};
+
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+
+// Mirrors uploadSiteContentImage above, against the separate
+// site-content-videos bucket (the images one rejects non-image mime types
+// at the bucket level).
+export async function uploadSiteContentVideo(
+  _prev: ContentActionState,
+  formData: FormData
+): Promise<ContentActionState> {
+  const admin = await requireAdmin();
+
+  const field = String(formData.get('field') ?? '') as VideoField;
+  const config = VIDEO_FIELD_CONFIG[field];
+  if (!config) return { error: 'Unknown video field.' };
+
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) return { error: 'No file selected.' };
+  if (!ALLOWED_VIDEO_TYPES.includes(file.type)) return { error: `Unsupported file type: ${file.type || 'unknown'}` };
+  if (file.size > MAX_VIDEO_BYTES) return { error: 'Video is larger than 30MB.' };
+
+  const supabase = await createClient();
+  const current = await readRawContent(admin.vendor_id);
+  const sectionData = (current[config.section] as Record<string, unknown> | undefined) ?? {};
+  const previousUrl = sectionData[config.key] as string | null | undefined;
+
+  const ext = file.type === 'video/webm' ? 'webm' : 'mp4';
+  const path = `${admin.vendor_id}/${config.basePath}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('site-content-videos')
+    .upload(path, file, { contentType: file.type, upsert: true });
+  if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+
+  if (previousUrl) {
+    const marker = '/site-content-videos/';
+    const idx = previousUrl.indexOf(marker);
+    if (idx !== -1) {
+      const previousPath = decodeURIComponent(previousUrl.slice(idx + marker.length).split('?')[0]);
+      if (previousPath !== path) {
+        await supabase.storage.from('site-content-videos').remove([previousPath]);
+      }
+    }
+  }
+
+  const { data: publicUrl } = supabase.storage.from('site-content-videos').getPublicUrl(path);
+  const bustedUrl = `${publicUrl.publicUrl}?v=${Date.now()}`;
+
+  const { error } = await writeContentPatch(admin.vendor_id, {
+    [config.section]: { ...sectionData, [config.key]: bustedUrl },
+  });
+  if (error) return { error: `Failed to save: ${error}` };
+
+  await logAdminAction(admin, 'update', 'site_content', field);
+  revalidatePath('/admin/settings/content');
+  return { success: true };
+}
+
+// Clears a video field back to empty (the size-conscious equivalent of the
+// image uploaders always having a file to replace-in-place -- a video field
+// needs an explicit "remove" since customers pay for mobile data downloading
+// it).
+export async function clearSiteContentVideo(field: VideoField): Promise<ContentActionState> {
+  const admin = await requireAdmin();
+  const config = VIDEO_FIELD_CONFIG[field];
+  if (!config) return { error: 'Unknown video field.' };
+
+  const current = await readRawContent(admin.vendor_id);
+  const sectionData = (current[config.section] as Record<string, unknown> | undefined) ?? {};
+  const previousUrl = sectionData[config.key] as string | null | undefined;
+
+  if (previousUrl) {
+    const supabase = await createClient();
+    const marker = '/site-content-videos/';
+    const idx = previousUrl.indexOf(marker);
+    if (idx !== -1) {
+      const previousPath = decodeURIComponent(previousUrl.slice(idx + marker.length).split('?')[0]);
+      await supabase.storage.from('site-content-videos').remove([previousPath]);
+    }
+  }
+
+  const { error } = await writeContentPatch(admin.vendor_id, {
+    [config.section]: { ...sectionData, [config.key]: '' },
+  });
+  if (error) return { error: `Failed to save: ${error}` };
+
   revalidatePath('/admin/settings/content');
   return { success: true };
 }
