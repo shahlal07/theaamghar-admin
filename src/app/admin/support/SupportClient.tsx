@@ -5,7 +5,7 @@ import { useActionState } from 'react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import type { SupportConversation, SupportMessage } from '@/lib/queries/support';
-import { startSupportConversation, sendSupportMessage, markSupportConversationRead } from './actions';
+import { startSupportConversation, sendSupportMessage, markSupportConversationRead, generateSupportReplyDraft } from './actions';
 
 function MessageBubble({ message, adminName }: { message: SupportMessage; adminName: string }) {
   const isMine = message.senderType === 'customer';
@@ -42,7 +42,22 @@ export function SupportClient({
   const [messages, setMessages] = useState(initialMessages);
   const [conversationId, setConversationId] = useState(conversation?.id ?? null);
   const [draft, setDraft] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  async function suggestReply() {
+    setAiBusy(true);
+    try {
+      const text = await generateSupportReplyDraft({
+        messages: messages.map((m) => ({ senderType: m.senderType, body: m.body })),
+      });
+      setDraft(text);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI reply drafting is unavailable right now.');
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   const [startState, startAction, startPending] = useActionState(startSupportConversation, undefined);
   const [replyState, replyAction, replyPending] = useActionState(sendSupportMessage, undefined);
@@ -147,6 +162,15 @@ export function SupportClient({
         }}
         className="flex items-end gap-2 border-t border-[var(--border-subtle)] p-3"
       >
+        <button
+          type="button"
+          onClick={suggestReply}
+          disabled={aiBusy || messages.length === 0}
+          title="Draft a reply with AI"
+          className="flex h-[42px] shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-sunken)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          ✨ {aiBusy ? 'Drafting…' : 'Suggest reply'}
+        </button>
         <textarea
           name="body"
           value={draft}

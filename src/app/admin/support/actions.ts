@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminUser } from '@/lib/dal';
 import { logAdminAction } from '@/lib/audit-log';
+import { groqComplete, type ChatMessage } from '@/lib/groq';
 
 export type SentMessage = { id: string; senderType: string; body: string; createdAt: string };
 export type ActionState = { error?: string; success?: boolean; conversationId?: string; message?: SentMessage } | undefined;
@@ -77,6 +78,36 @@ export async function sendSupportMessage(_prev: ActionState, formData: FormData)
   await logAdminAction(admin, 'send_support_message', 'support_conversation', parsed.data.conversationId);
   revalidatePath('/admin/support');
   return { success: true, message };
+}
+
+const SUPPORT_REPLY_SYSTEM_PROMPT =
+  'You are drafting a short, helpful, concise reply as a vendor admin, replying to the Nashemann platform support team inside the vendor admin dashboard. Only state facts you are given in the conversation history -- never invent order numbers, amounts, or policies. If you don\'t have enough information to give a real answer, draft a brief reply asking a clarifying question instead of guessing. Reply with only the message text, no quotes, no preamble.';
+
+// Mirrors nashemann-admin's own generateSupportReplyDraftAction (superadmin
+// side already had "suggest reply" -- vendor admins never got the same
+// feature for the other end of the same conversation). Read-only (drafts
+// text, doesn't send it), so no admin-mutating-action check is needed
+// beyond confirming this is a real admin session.
+export async function generateSupportReplyDraft(input: {
+  messages: { senderType: string; body: string }[];
+}): Promise<string> {
+  await getAdminUser();
+
+  // In this schema, sender_type='customer' actually means the vendor admin
+  // (see CLAUDE.md's note on support_conversations.customer_id) -- the
+  // conversational role for drafting has to be that admin's own past
+  // messages are "assistant" and Nashemann support's are "user", the
+  // reverse of the raw sender_type label.
+  const history: ChatMessage[] = input.messages.slice(-12).map((m) => ({
+    role: m.senderType === 'customer' ? 'assistant' : 'user',
+    content: m.body,
+  }));
+
+  return groqComplete([
+    { role: 'system', content: SUPPORT_REPLY_SYSTEM_PROMPT },
+    ...history,
+    { role: 'user', content: 'Draft the next reply as the vendor admin.' },
+  ]);
 }
 
 export async function markSupportConversationRead(conversationId: string): Promise<void> {
