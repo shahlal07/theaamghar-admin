@@ -64,6 +64,16 @@ export async function createCoupon(
     .from('coupons')
     .insert({
       code: d.code,
+      // vendor_id has no default and the coupons_scope_vendor_consistency
+      // check (scope='vendor' requires a real vendor_id) rejects a bare
+      // insert without it -- this was previously omitted entirely, which
+      // also failed the RLS insert policy's `vendor_id = current_vendor_id()`
+      // check for every regular vendor admin (a super admin's insert would
+      // have silently gone through with vendor_id null, i.e. accidentally
+      // universal). "Create Coupon" was non-functional for every vendor
+      // until this was set explicitly.
+      vendor_id: admin.vendor_id,
+      scope: 'vendor',
       discount_type: d.discountType,
       discount_value: d.discountValue,
       min_order_amount: d.minOrderAmount,
