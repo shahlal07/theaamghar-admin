@@ -59,7 +59,7 @@ export function ProductsListClient({ products }: { products: ProductListItem[] }
             <th className="py-3 pl-5 pr-4">Product</th>
             <th className="py-3 pr-4">Category</th>
             <th className="py-3 pr-4">Price</th>
-            <th className="py-3 pr-4">Box Sizes</th>
+            <th className="py-3 pr-4">Variants</th>
             <th className="py-3 pr-4">Stock</th>
             <th className="py-3 pr-4">Status</th>
             <th className="py-3 pr-5">Actions</th>
