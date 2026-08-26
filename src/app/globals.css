@@ -58,3 +58,25 @@ body {
   color: var(--text);
   font-family: var(--font-sans), sans-serif;
 }
+
+/* iOS Safari force-zooms the whole page when a focused form control has a
+   computed font-size below 16px. Nearly every input/select/textarea in this
+   admin panel is styled with Tailwind's text-sm (14px) -- login, every
+   product/order/settings form, the profit calculator -- so on a vendor's
+   phone (the only device most of them use to run this panel, per how this
+   app is actually used) tapping almost any field zoomed the whole page in
+   and it stayed zoomed.
+
+   !important is required, not decorative: a plain `input` element selector
+   (specificity 0-0-1) always loses to Tailwind's `.text-sm` class (0-1-0)
+   regardless of source order, so a bare override here would be silently
+   beaten by the very class that causes the problem on every field that
+   has it. Desktop is unaffected -- iOS doesn't zoom there, and no page
+   here changes visual density based on this rule. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRevenueOrder } from './order-revenue';
+import { isRevenueOrder, isCompletedOrder } from './order-revenue';
 
 describe('isRevenueOrder', () => {
   it('counts a normal delivered order as revenue', () => {
@@ -28,5 +28,33 @@ describe('isRevenueOrder', () => {
 
   it('counts a null payment_status (COD not yet collected) as revenue', () => {
     expect(isRevenueOrder({ status: 'confirmed', payment_status: null })).toBe(true);
+  });
+});
+
+describe('isCompletedOrder', () => {
+  it('counts a delivered, paid order as profit', () => {
+    expect(isCompletedOrder({ status: 'delivered', payment_status: 'paid' })).toBe(true);
+  });
+
+  it('excludes a pending order, unlike isRevenueOrder', () => {
+    expect(isCompletedOrder({ status: 'pending', payment_status: 'pending' })).toBe(false);
+  });
+
+  it('excludes confirmed/packed/shipped orders -- only delivered counts', () => {
+    expect(isCompletedOrder({ status: 'confirmed', payment_status: null })).toBe(false);
+    expect(isCompletedOrder({ status: 'packed', payment_status: null })).toBe(false);
+    expect(isCompletedOrder({ status: 'shipped', payment_status: null })).toBe(false);
+  });
+
+  it('excludes a delivered order whose payment was refunded', () => {
+    expect(isCompletedOrder({ status: 'delivered', payment_status: 'refunded' })).toBe(false);
+  });
+
+  it('excludes a delivered order whose payment failed', () => {
+    expect(isCompletedOrder({ status: 'delivered', payment_status: 'failed' })).toBe(false);
+  });
+
+  it('counts a delivered COD order not yet marked paid (null payment_status)', () => {
+    expect(isCompletedOrder({ status: 'delivered', payment_status: null })).toBe(true);
   });
 });

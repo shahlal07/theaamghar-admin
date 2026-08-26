@@ -25,7 +25,7 @@ export default async function DashboardPage() {
       <section>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           <StatCard label="Total Revenue" value={formatPKR(d.totalRevenue)} accent="orange" />
-          <StatCard label="Total Profit" value={formatPKR(d.totalProfit)} accent="green" />
+          <StatCard label="Total Profit" value={formatPKR(d.totalProfit)} hint="Delivered orders only" accent="green" />
           <StatCard label="Total Orders" value={d.totalOrders.toLocaleString()} accent="blue" />
           <StatCard
             label="Avg. Order Value"

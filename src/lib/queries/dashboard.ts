@@ -1,6 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
-import { isRevenueOrder } from '@/lib/order-revenue';
+import { isRevenueOrder, isCompletedOrder } from '@/lib/order-revenue';
 import {
   startOfDay,
   startOfWeek,
@@ -143,7 +143,9 @@ export async function getDashboardData(): Promise<DashboardData> {
   const revenueOrders = orders.filter(isRevenueOrder);
 
   const totalRevenue = revenueOrders.reduce((s, o) => s + Number(o.total), 0);
-  const totalProfit = revenueOrders.reduce((s, o) => s + Number(o.profit ?? 0), 0);
+  // Profit counts a stricter set than revenue -- only delivered orders, not
+  // every non-cancelled one -- see isCompletedOrder's comment.
+  const totalProfit = orders.filter(isCompletedOrder).reduce((s, o) => s + Number(o.profit ?? 0), 0);
 
   const statusCounts = emptyStatusCounts();
   for (const o of orders) {
@@ -190,6 +192,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     const point = map.get(key) ?? { label, revenue: 0, profit: 0, orders: 0 };
     if (isRevenueOrder(order)) {
       point.revenue += Number(order.total);
+    }
+    if (isCompletedOrder(order)) {
       point.profit += Number(order.profit ?? 0);
     }
     point.orders += 1;

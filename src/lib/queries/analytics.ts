@@ -2,7 +2,7 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { differenceInCalendarDays, format, subDays } from 'date-fns';
 import { ORDER_STATUSES, type OrderStatus } from '@/lib/order-status';
-import { isRevenueOrder } from '@/lib/order-revenue';
+import { isRevenueOrder, isCompletedOrder } from '@/lib/order-revenue';
 
 type OrderItem = { name?: string; variety?: string; qty?: number };
 type OrderRow = {
@@ -42,7 +42,9 @@ export type AnalyticsData = {
 function summarize(orders: OrderRow[]) {
   const revenueOrders = orders.filter(isRevenueOrder);
   const revenue = revenueOrders.reduce((s, o) => s + Number(o.total), 0);
-  const profit = revenueOrders.reduce((s, o) => s + Number(o.profit), 0);
+  // Profit is stricter than revenue -- only delivered orders count, not
+  // every non-cancelled one -- see isCompletedOrder's comment.
+  const profit = orders.filter(isCompletedOrder).reduce((s, o) => s + Number(o.profit), 0);
   return {
     revenue,
     profit,
@@ -108,6 +110,8 @@ export async function getAnalyticsData(fromDate: Date, toDateExclusive: Date): P
     const isRevenue = isRevenueOrder(o);
     if (isRevenue) {
       dayPoint.revenue += Number(o.total);
+    }
+    if (isCompletedOrder(o)) {
       dayPoint.profit += Number(o.profit);
     }
     dayPoint.orders += 1;
