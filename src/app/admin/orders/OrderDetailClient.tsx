@@ -178,6 +178,12 @@ export function OrderDetailClient({ order }: { order: OrderDetail }) {
               <span>Total</span>
               <span>{formatPKR(order.total)}</span>
             </div>
+            {order.platform_fee_amount > 0 && (
+              <div className="flex justify-between text-[var(--text-light)]">
+                <span>Nashemann platform fee</span>
+                <span>-{formatPKR(order.platform_fee_amount)}</span>
+              </div>
+            )}
             {order.profit !== null && (
               <div className="flex justify-between text-[var(--orchard-green)]">
                 <span>Profit (snapshot)</span>

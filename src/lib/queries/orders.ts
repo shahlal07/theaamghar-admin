@@ -44,6 +44,7 @@ export type OrderDetail = OrderListItem & {
   discount_amount: number;
   profit: number | null;
   cost_snapshot: Record<string, unknown> | null;
+  platform_fee_amount: number;
   tracking_number: string | null;
   courier_name: string | null;
   customer_email: string | null;
@@ -105,7 +106,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     .select(
       `id, order_number, items, delivery, subtotal, shipping_fee, discount_code,
        discount_amount, total, status, payment_status, payment_method, tracking_number,
-       courier_name, profit, cost_snapshot, created_at, customer_id,
+       courier_name, profit, cost_snapshot, platform_fee_amount, created_at, customer_id,
        payment_proof_url, payment_proof_uploaded_at, payment_verified_at,
        payment_rejection_reason`
     )
@@ -146,6 +147,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     courier_name: data.courier_name,
     profit: data.profit,
     cost_snapshot: data.cost_snapshot as Record<string, unknown> | null,
+    platform_fee_amount: data.platform_fee_amount ?? 0,
     created_at: data.created_at,
     payment_proof_url: data.payment_proof_url,
     payment_proof_uploaded_at: data.payment_proof_uploaded_at,
